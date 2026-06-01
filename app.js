@@ -1,5 +1,7 @@
 const STORAGE_KEY = "economize.entries.v1";
 const THEME_KEY = "economize.theme.v1";
+const CARD_SETTINGS_KEY = "economize.cards.v1";
+const CATEGORY_LIMITS_KEY = "economize.category-limits.v1";
 
 const typeLabels = {
   income: "Entrada",
@@ -13,6 +15,14 @@ const repeatLabels = {
   fixed: "Fixo mensal",
   installment: "Parcelado",
 };
+
+const defaultCategories = ["Moradia", "Mercado", "Transporte", "Saúde", "Lazer", "Assinaturas", "Educação", "Salário"];
+
+const defaultCards = [
+  { id: "card-1", name: "Cartão 1", closingDay: 25, dueDay: 5 },
+  { id: "card-2", name: "Cartão 2", closingDay: 25, dueDay: 10 },
+  { id: "card-3", name: "Cartão 3", closingDay: 25, dueDay: 15 },
+];
 
 const currency = new Intl.NumberFormat("pt-BR", {
   style: "currency",
@@ -43,62 +53,69 @@ const typeSelect = document.querySelector("#type");
 const cardField = document.querySelector("#cardField");
 const cardNameInput = document.querySelector("#cardName");
 const cardBreakdown = document.querySelector("#cardBreakdown");
+const categoryBreakdown = document.querySelector("#categoryBreakdown");
 const exportBackup = document.querySelector("#exportBackup");
 const exportPdf = document.querySelector("#exportPdf");
 const importBackup = document.querySelector("#importBackup");
+const importCsv = document.querySelector("#importCsv");
 const themeSelect = document.querySelector("#themeSelect");
 const systemTheme = window.matchMedia("(prefers-color-scheme: dark)");
+const searchInput = document.querySelector("#searchInput");
+const submitEntry = document.querySelector("#submitEntry");
+const cancelEdit = document.querySelector("#cancelEdit");
+const cardSettingsList = document.querySelector("#cardSettingsList");
+const dashboardPanel = document.querySelector("#dashboardPanel");
+const categoryOptions = document.querySelector("#categoryOptions");
+const cardOptions = document.querySelector("#cardOptions");
 
 let entries = normalizeEntries(loadEntries());
+let cardSettings = normalizeCardSettings(loadJson(CARD_SETTINGS_KEY, defaultCards));
+let categoryLimits = loadJson(CATEGORY_LIMITS_KEY, {});
 let activeFilter = "all";
+let searchQuery = "";
+let editEntryId = null;
 
 monthInput.value = getCurrentMonth();
 themeSelect.value = loadTheme();
 applyTheme(themeSelect.value);
 syncInstallmentsField();
 syncCardField();
+renderCardSettings();
+renderDatalists();
 render();
 
 form.addEventListener("submit", (event) => {
   event.preventDefault();
 
-  const formData = new FormData(form);
-  const amount = Number(formData.get("amount"));
+  const entry = getEntryFromForm();
 
-  if (!amount || amount <= 0) {
+  if (!entry) {
     return;
   }
 
-  const installments = getInstallments(formData);
-  const currentInstallment = getCurrentInstallment(formData);
-
-  if (formData.get("repeat") === "installment" && currentInstallment > installments) {
-    alert("A parcela atual não pode ser maior que o total de parcelas.");
-    return;
+  if (editEntryId) {
+    const existing = entries.find((item) => item.id === editEntryId);
+    entries = entries.map((item) =>
+      item.id === editEntryId
+        ? {
+            ...entry,
+            id: editEntryId,
+            createdAt: item.createdAt,
+            paidMonths: item.paidMonths || [],
+          }
+        : item,
+    );
+  } else {
+    entries.push({
+      ...entry,
+      id: crypto.randomUUID(),
+      paidMonths: [],
+      createdAt: new Date().toISOString(),
+    });
   }
-
-  entries.push({
-    id: crypto.randomUUID(),
-    startMonth: getEntryStartMonth(formData.get("dueDate"), currentInstallment),
-    description: formData.get("description").trim(),
-    amount,
-    type: formData.get("type"),
-    cardName: getCardName(formData),
-    category: formData.get("category").trim(),
-    dueDate: formData.get("dueDate"),
-    repeat: formData.get("repeat"),
-    installments,
-    createdAt: new Date().toISOString(),
-  });
 
   saveEntries();
-  form.reset();
-  typeSelect.value = "income";
-  repeatSelect.value = "once";
-  installmentsInput.value = "2";
-  currentInstallmentInput.value = "1";
-  syncInstallmentsField();
-  syncCardField();
+  resetForm();
   render();
 });
 
@@ -108,6 +125,12 @@ typeSelect.addEventListener("change", syncCardField);
 exportBackup.addEventListener("click", downloadBackup);
 exportPdf.addEventListener("click", exportMonthPdf);
 importBackup.addEventListener("change", importBackupFile);
+importCsv.addEventListener("change", importCsvFile);
+cancelEdit.addEventListener("click", resetForm);
+searchInput.addEventListener("input", () => {
+  searchQuery = searchInput.value.trim().toLowerCase();
+  render();
+});
 themeSelect.addEventListener("change", () => {
   saveTheme(themeSelect.value);
   applyTheme(themeSelect.value);
@@ -146,16 +169,112 @@ filterButtons.forEach((button) => {
 });
 
 entryList.addEventListener("click", (event) => {
-  const button = event.target.closest("[data-delete]");
+  const action = event.target.closest("[data-action]");
+
+  if (!action) {
+    return;
+  }
+
+  const { id, action: actionName, month } = action.dataset;
+
+  if (actionName === "delete") {
+    entries = entries.filter((entry) => entry.id !== id);
+  }
+
+  if (actionName === "paid") {
+    entries = entries.map((entry) => (entry.id === id ? togglePaidMonth(entry, month) : entry));
+  }
+
+  if (actionName === "edit") {
+    startEdit(id);
+    return;
+  }
+
+  if (actionName === "duplicate") {
+    duplicateEntry(id);
+  }
+
+  saveEntries();
+  render();
+});
+
+cardSettingsList.addEventListener("input", (event) => {
+  const input = event.target.closest("[data-card-setting]");
+
+  if (!input) {
+    return;
+  }
+
+  const { cardId, cardSetting } = input.dataset;
+  cardSettings = cardSettings.map((card) =>
+    card.id === cardId
+      ? {
+          ...card,
+          [cardSetting]: cardSetting === "name" ? input.value.trim() : clampDay(input.value),
+        }
+      : card,
+  );
+  saveCardSettings();
+  renderDatalists();
+  render();
+});
+
+categoryBreakdown.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-limit]");
 
   if (!button) {
     return;
   }
 
-  entries = entries.filter((entry) => entry.id !== button.dataset.delete);
-  saveEntries();
+  const category = button.dataset.limit;
+  const currentLimit = categoryLimits[category] || "";
+  const answer = prompt(`Limite mensal para ${category}`, currentLimit);
+
+  if (answer === null) {
+    return;
+  }
+
+  const value = Number(answer.replace(",", "."));
+
+  if (!value || value <= 0) {
+    delete categoryLimits[category];
+  } else {
+    categoryLimits[category] = value;
+  }
+
+  saveCategoryLimits();
   render();
 });
+
+function getEntryFromForm() {
+  const formData = new FormData(form);
+  const amount = Number(formData.get("amount"));
+
+  if (!amount || amount <= 0) {
+    return null;
+  }
+
+  const repeat = formData.get("repeat");
+  const installments = getInstallments(formData);
+  const currentInstallment = getCurrentInstallment(formData);
+
+  if (repeat === "installment" && currentInstallment > installments) {
+    alert("A parcela atual não pode ser maior que o total de parcelas.");
+    return null;
+  }
+
+  return {
+    startMonth: getEntryStartMonth(formData.get("dueDate"), currentInstallment, repeat),
+    description: formData.get("description").trim(),
+    amount,
+    type: formData.get("type"),
+    cardName: getCardName(formData),
+    category: formData.get("category").trim(),
+    dueDate: formData.get("dueDate"),
+    repeat,
+    installments,
+  };
+}
 
 function render() {
   const monthEntries = getMonthEntries();
@@ -165,6 +284,8 @@ function render() {
   const expenses = sumByType(monthEntries, "expense");
   const credit = sumByType(monthEntries, "credit");
   const totalSpent = bills + expenses + credit;
+  const paidTotal = monthEntries.filter((entry) => entry.type !== "income" && entry.isPaid).reduce((total, entry) => total + Number(entry.amount), 0);
+  const pendingTotal = Math.max(totalSpent - paidTotal, 0);
   const monthBalance = income - totalSpent;
   const percent = income > 0 ? Math.min((totalSpent / income) * 100, 100) : 0;
 
@@ -173,24 +294,42 @@ function render() {
   creditTotal.textContent = currency.format(credit);
   balance.textContent = currency.format(monthBalance);
   spentPercent.textContent = `${Math.round(percent)}% usado`;
-  availableText.textContent = `${currency.format(monthBalance)} disponível`;
+  availableText.textContent = `${currency.format(paidTotal)} pago · ${currency.format(pendingTotal)} pendente`;
   progressBar.style.width = `${percent}%`;
   progressBar.style.background = percent > 85 ? "var(--red)" : percent > 65 ? "var(--yellow)" : "var(--green)";
-  entryCount.textContent = getEntryCountText(monthEntries.length);
+  entryCount.textContent = getEntryCountText(monthEntries.length, visibleEntries.length);
 
+  renderDashboard(monthEntries);
   renderCardBreakdown(monthEntries);
+  renderCategoryBreakdown(monthEntries);
   renderEntries(visibleEntries);
+}
+
+function renderDashboard(monthEntries) {
+  const previousMonth = shiftMonth(monthInput.value, -1);
+  const previousEntries = getEntriesForMonth(previousMonth);
+  const currentSpent = getTotalSpent(monthEntries);
+  const previousSpent = getTotalSpent(previousEntries);
+  const currentBalance = sumByType(monthEntries, "income") - currentSpent;
+  const previousBalance = sumByType(previousEntries, "income") - previousSpent;
+  const spentDiff = currentSpent - previousSpent;
+  const balanceDiff = currentBalance - previousBalance;
+
+  dashboardPanel.innerHTML = `
+    <div class="insight-item">
+      <span>Comparação com ${getMonthLabel(previousMonth)}</span>
+      <strong>${formatDiff(spentDiff)} em gastos</strong>
+    </div>
+    <div class="insight-item">
+      <span>Saldo vs. mês anterior</span>
+      <strong>${formatDiff(balanceDiff)}</strong>
+    </div>
+  `;
 }
 
 function renderCardBreakdown(monthEntries) {
   const creditEntries = monthEntries.filter((entry) => entry.type === "credit");
-  const totalsByCard = creditEntries.reduce((totals, entry) => {
-    const cardName = entry.cardName || "Cartão não informado";
-    totals[cardName] = (totals[cardName] || 0) + Number(entry.amount);
-
-    return totals;
-  }, {});
-  const cards = Object.entries(totalsByCard).sort((a, b) => b[1] - a[1]);
+  const cards = getCreditCardTotals(monthEntries);
 
   cardBreakdown.innerHTML = "";
 
@@ -208,14 +347,51 @@ function renderCardBreakdown(monthEntries) {
   `;
 
   cards.forEach(([cardName, total]) => {
+    const card = getCardConfig(cardName);
     const item = document.createElement("div");
     item.className = "card-breakdown-item";
     item.innerHTML = `
-      <span>${escapeHtml(cardName)}</span>
+      <span>${escapeHtml(cardName)} · fecha ${card.closingDay} · vence ${card.dueDay}</span>
       <strong>${currency.format(total)}</strong>
     `;
 
     cardBreakdown.append(item);
+  });
+}
+
+function renderCategoryBreakdown(monthEntries) {
+  const categories = getCategoryTotals(monthEntries);
+
+  categoryBreakdown.innerHTML = "";
+
+  if (!categories.length) {
+    categoryBreakdown.classList.add("is-hidden");
+    return;
+  }
+
+  categoryBreakdown.classList.remove("is-hidden");
+  categoryBreakdown.innerHTML = `
+    <div class="card-breakdown-title">
+      <strong>Categorias</strong>
+      <span>Limites mensais</span>
+    </div>
+  `;
+
+  categories.forEach(([category, total]) => {
+    const limit = categoryLimits[category];
+    const percent = limit ? Math.min((total / limit) * 100, 100) : 0;
+    const item = document.createElement("div");
+    item.className = "category-row";
+    item.innerHTML = `
+      <div>
+        <span>${escapeHtml(category)}</span>
+        <strong>${currency.format(total)}${limit ? ` de ${currency.format(limit)}` : ""}</strong>
+        <div class="mini-track"><div style="width: ${percent}%"></div></div>
+      </div>
+      <button class="tiny-button" type="button" data-limit="${escapeHtml(category)}">${limit ? "Editar limite" : "Definir limite"}</button>
+    `;
+
+    categoryBreakdown.append(item);
   });
 }
 
@@ -231,39 +407,85 @@ function renderEntries(visibleEntries) {
     .sort((a, b) => (a.occurrenceDate || "9999-12-31").localeCompare(b.occurrenceDate || "9999-12-31"))
     .forEach((entry) => {
       const item = document.createElement("li");
-      item.className = "entry-item";
+      item.className = `entry-item ${entry.isPaid ? "is-paid" : ""}`;
 
       const signal = entry.type === "income" ? "+" : "-";
       const dateLabel = entry.occurrenceDate ? formatDate(entry.occurrenceDate) : "Sem data";
       const category = entry.category || "Sem categoria";
       const repeatLabel = getRepeatLabel(entry);
       const cardTag = entry.type === "credit" ? `<span class="entry-tag">${escapeHtml(entry.cardName || "Cartão não informado")}</span>` : "";
+      const invoiceTag = entry.type === "credit" ? `<span class="entry-tag">${getInvoiceLabel(entry)}</span>` : "";
+      const paidLabel = entry.type === "income" ? "" : `<span class="entry-tag ${entry.isPaid ? "paid-tag" : ""}">${entry.isPaid ? "Pago" : "Pendente"}</span>`;
 
       item.innerHTML = `
         <div class="entry-main">
           <strong>${escapeHtml(entry.description)}</strong>
           <div class="entry-meta">
             <span class="entry-tag">${typeLabels[entry.type]}</span>
+            ${paidLabel}
             ${cardTag}
+            ${invoiceTag}
             <span class="entry-tag">${repeatLabel}</span>
             <span class="entry-tag">${escapeHtml(category)}</span>
             <span class="entry-tag">${dateLabel}</span>
           </div>
         </div>
         <span class="entry-value">${signal} ${currency.format(entry.amount)}</span>
-        <button class="delete-button" type="button" data-delete="${entry.id}" aria-label="Remover lançamento">×</button>
+        <div class="entry-actions">
+          ${
+            entry.type === "income"
+              ? ""
+              : `<button class="action-button" type="button" data-action="paid" data-id="${entry.id}" data-month="${entry.occurrenceMonth}">${entry.isPaid ? "Desfazer" : "Pagar"}</button>`
+          }
+          <button class="action-button" type="button" data-action="edit" data-id="${entry.id}">Editar</button>
+          <button class="action-button" type="button" data-action="duplicate" data-id="${entry.id}">Duplicar</button>
+          <button class="delete-button" type="button" data-action="delete" data-id="${entry.id}" aria-label="Remover lançamento">×</button>
+        </div>
       `;
 
       entryList.append(item);
     });
 }
 
+function renderCardSettings() {
+  cardSettingsList.innerHTML = cardSettings
+    .map(
+      (card) => `
+        <div class="card-setting-row">
+          <label>
+            Nome
+            <input data-card-setting="name" data-card-id="${card.id}" type="text" value="${escapeHtml(card.name)}" />
+          </label>
+          <label>
+            Fecha
+            <input data-card-setting="closingDay" data-card-id="${card.id}" type="number" min="1" max="31" value="${card.closingDay}" />
+          </label>
+          <label>
+            Vence
+            <input data-card-setting="dueDay" data-card-id="${card.id}" type="number" min="1" max="31" value="${card.dueDay}" />
+          </label>
+        </div>
+      `,
+    )
+    .join("");
+}
+
+function renderDatalists() {
+  const categories = [...new Set([...defaultCategories, ...entries.map((entry) => entry.category).filter(Boolean)])].sort();
+  const cards = [...new Set([...cardSettings.map((card) => card.name).filter(Boolean), ...entries.map((entry) => entry.cardName).filter(Boolean)])];
+
+  categoryOptions.innerHTML = categories.map((category) => `<option value="${escapeHtml(category)}"></option>`).join("");
+  cardOptions.innerHTML = cards.map((card) => `<option value="${escapeHtml(card)}"></option>`).join("");
+}
+
 function downloadBackup() {
   const backup = {
     app: "Economize!",
-    version: 1,
+    version: 2,
     exportedAt: new Date().toISOString(),
     entries,
+    cardSettings,
+    categoryLimits,
   };
   const file = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(file);
@@ -295,12 +517,13 @@ function exportMonthPdf() {
 
 function getPdfReportHtml(monthEntries) {
   const income = sumByType(monthEntries, "income");
-  const bills = sumByType(monthEntries, "bill");
-  const expenses = sumByType(monthEntries, "expense");
+  const totalSpent = getTotalSpent(monthEntries);
   const credit = sumByType(monthEntries, "credit");
-  const totalSpent = bills + expenses + credit;
   const monthBalance = income - totalSpent;
   const creditCards = getCreditCardTotals(monthEntries);
+  const categoryRows = getCategoryTotals(monthEntries)
+    .map(([category, total]) => `<li><span>${escapeHtml(category)}</span><strong>${currency.format(total)}</strong></li>`)
+    .join("");
   const rows = [...monthEntries]
     .sort((a, b) => (a.occurrenceDate || "9999-12-31").localeCompare(b.occurrenceDate || "9999-12-31"))
     .map(getPdfEntryRow)
@@ -315,12 +538,7 @@ function getPdfReportHtml(monthEntries) {
         <title>Economize - ${getMonthLabel(monthInput.value)}</title>
         <style>
           * { box-sizing: border-box; }
-          body {
-            margin: 0;
-            color: #1f241f;
-            background: #fff;
-            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-          }
+          body { margin: 0; color: #1f241f; background: #fff; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
           main { max-width: 960px; margin: 0 auto; padding: 32px; }
           header { display: flex; justify-content: space-between; gap: 24px; border-bottom: 1px solid #d9dfd6; padding-bottom: 20px; margin-bottom: 22px; }
           h1 { margin: 0 0 6px; font-size: 28px; }
@@ -344,17 +562,8 @@ function getPdfReportHtml(monthEntries) {
           td:last-child, th:last-child { text-align: right; white-space: nowrap; }
           .empty { border: 1px solid #d9dfd6; border-radius: 8px; padding: 16px; color: #687066; text-align: center; }
           @page { margin: 16mm; }
-          @media print {
-            main { padding: 0; }
-            header { break-after: avoid; }
-            section, table { break-inside: avoid; }
-          }
-          @media (max-width: 720px) {
-            main { padding: 20px; }
-            header, li { flex-direction: column; }
-            .date { text-align: left; }
-            .summary { grid-template-columns: 1fr 1fr; }
-          }
+          @media print { main { padding: 0; } header { break-after: avoid; } section, table { break-inside: avoid; } }
+          @media (max-width: 720px) { main { padding: 20px; } header, li { flex-direction: column; } .date { text-align: left; } .summary { grid-template-columns: 1fr 1fr; } }
         </style>
       </head>
       <body>
@@ -380,6 +589,11 @@ function getPdfReportHtml(monthEntries) {
           </section>
 
           <section>
+            <h2>Categorias</h2>
+            ${categoryRows ? `<ul>${categoryRows}</ul>` : `<div class="empty">Nenhum gasto categorizado neste mês.</div>`}
+          </section>
+
+          <section>
             <h2>Lançamentos</h2>
             ${
               rows
@@ -388,6 +602,7 @@ function getPdfReportHtml(monthEntries) {
                       <tr>
                         <th>Data</th>
                         <th>Descrição</th>
+                        <th>Status</th>
                         <th>Tipo</th>
                         <th>Categoria</th>
                         <th>Cartão</th>
@@ -412,26 +627,14 @@ function getPdfEntryRow(entry) {
   return `
     <tr>
       <td>${entry.occurrenceDate ? formatDate(entry.occurrenceDate) : "Sem data"}</td>
-      <td>${escapeHtml(entry.description)}<br><small>${getRepeatLabel(entry)}</small></td>
+      <td>${escapeHtml(entry.description)}<br><small>${getRepeatLabel(entry)}${entry.type === "credit" ? ` · ${getInvoiceLabel(entry)}` : ""}</small></td>
+      <td>${entry.type === "income" ? "" : entry.isPaid ? "Pago" : "Pendente"}</td>
       <td>${typeLabels[entry.type]}</td>
       <td>${escapeHtml(entry.category || "Sem categoria")}</td>
       <td>${escapeHtml(cardName)}</td>
       <td>${signal}${currency.format(entry.amount)}</td>
     </tr>
   `;
-}
-
-function getCreditCardTotals(monthEntries) {
-  const totals = monthEntries
-    .filter((entry) => entry.type === "credit")
-    .reduce((cards, entry) => {
-      const cardName = entry.cardName || "Cartão não informado";
-      cards[cardName] = (cards[cardName] || 0) + Number(entry.amount);
-
-      return cards;
-    }, {});
-
-  return Object.entries(totals).sort((a, b) => b[1] - a[1]);
 }
 
 function importBackupFile(event) {
@@ -445,7 +648,8 @@ function importBackupFile(event) {
 
   reader.addEventListener("load", () => {
     try {
-      const importedEntries = getEntriesFromBackup(reader.result);
+      const backup = JSON.parse(reader.result);
+      const importedEntries = getEntriesFromBackup(backup);
       const confirmed = confirm("Importar este backup vai substituir os dados salvos neste navegador. Continuar?");
 
       if (!confirmed) {
@@ -453,7 +657,13 @@ function importBackupFile(event) {
       }
 
       entries = normalizeEntries(importedEntries);
+      cardSettings = normalizeCardSettings(backup.cardSettings || cardSettings);
+      categoryLimits = backup.categoryLimits || categoryLimits;
       saveEntries();
+      saveCardSettings();
+      saveCategoryLimits();
+      renderCardSettings();
+      renderDatalists();
       render();
       alert("Backup importado com sucesso.");
     } catch {
@@ -466,22 +676,69 @@ function importBackupFile(event) {
   reader.readAsText(file);
 }
 
+function importCsvFile(event) {
+  const [file] = event.target.files;
+
+  if (!file) {
+    return;
+  }
+
+  const reader = new FileReader();
+
+  reader.addEventListener("load", () => {
+    try {
+      const importedEntries = parseCsvEntries(reader.result);
+
+      if (!importedEntries.length) {
+        alert("Não encontrei lançamentos válidos no CSV.");
+        return;
+      }
+
+      entries = [...entries, ...importedEntries];
+      saveEntries();
+      renderDatalists();
+      render();
+      alert(`${importedEntries.length} lançamento(s) importado(s).`);
+    } catch {
+      alert("Não consegui importar esse CSV. Use colunas como descrição, valor, tipo, categoria, data e cartão.");
+    } finally {
+      importCsv.value = "";
+    }
+  });
+
+  reader.readAsText(file);
+}
+
 function getMonthEntries() {
-  return entries.flatMap((entry) => getOccurrenceForMonth(entry, monthInput.value));
+  return getEntriesForMonth(monthInput.value);
+}
+
+function getEntriesForMonth(month) {
+  return entries.flatMap((entry) => getOccurrenceForMonth(entry, month));
 }
 
 function getVisibleEntries(monthEntries) {
-  if (activeFilter === "all") {
-    return [...monthEntries];
+  let visibleEntries = activeFilter === "all" ? [...monthEntries] : monthEntries.filter((entry) => entry.type === activeFilter);
+
+  if (searchQuery) {
+    visibleEntries = visibleEntries.filter((entry) =>
+      [entry.description, entry.category, entry.cardName, typeLabels[entry.type], getRepeatLabel(entry)]
+        .filter(Boolean)
+        .some((value) => value.toLowerCase().includes(searchQuery)),
+    );
   }
 
-  return monthEntries.filter((entry) => entry.type === activeFilter);
+  return visibleEntries;
 }
 
 function sumByType(monthEntries, type) {
   return monthEntries
     .filter((entry) => entry.type === type)
     .reduce((total, entry) => total + Number(entry.amount), 0);
+}
+
+function getTotalSpent(monthEntries) {
+  return sumByType(monthEntries, "bill") + sumByType(monthEntries, "expense") + sumByType(monthEntries, "credit");
 }
 
 function getOccurrenceForMonth(entry, selectedMonth) {
@@ -501,22 +758,34 @@ function getOccurrenceForMonth(entry, selectedMonth) {
     return [];
   }
 
+  const occurrenceDate = getOccurrenceDate(entry, selectedMonth);
+
   return [
     {
       ...entry,
       occurrenceMonth: selectedMonth,
-      occurrenceDate: getOccurrenceDate(entry, selectedMonth),
+      occurrenceDate,
       installmentNumber: repeat === "installment" ? monthOffset + 1 : null,
+      isPaid: isEntryPaid(entry, selectedMonth),
+      invoiceMonth: entry.type === "credit" ? getInvoiceMonth(entry.cardName, occurrenceDate || `${selectedMonth}-01`) : "",
     },
   ];
 }
 
 function getRepeatLabel(entry) {
   if (entry.repeat === "installment") {
-    return `${repeatLabels.installment} ${entry.installmentNumber}/${entry.installments}`;
+    return `${repeatLabels.installment} ${entry.installmentNumber || 1}/${entry.installments}`;
   }
 
   return repeatLabels[entry.repeat] || repeatLabels.once;
+}
+
+function getInvoiceLabel(entry) {
+  if (!entry.invoiceMonth) {
+    return "Fatura sem data";
+  }
+
+  return `Fatura ${getMonthLabel(entry.invoiceMonth)}`;
 }
 
 function getOccurrenceDate(entry, selectedMonth) {
@@ -531,10 +800,10 @@ function getOccurrenceDate(entry, selectedMonth) {
   return `${selectedMonth}-${safeDay}`;
 }
 
-function getEntryStartMonth(dueDate, currentInstallment) {
+function getEntryStartMonth(dueDate, currentInstallment, repeat) {
   const referenceMonth = dueDate ? dueDate.slice(0, 7) : monthInput.value;
 
-  if (repeatSelect.value !== "installment") {
+  if (repeat !== "installment") {
     return referenceMonth;
   }
 
@@ -563,6 +832,235 @@ function getCardName(formData) {
   }
 
   return formData.get("cardName").trim() || "Cartão não informado";
+}
+
+function togglePaidMonth(entry, month) {
+  const paidMonths = new Set(entry.paidMonths || []);
+
+  if (paidMonths.has(month)) {
+    paidMonths.delete(month);
+  } else {
+    paidMonths.add(month);
+  }
+
+  return {
+    ...entry,
+    paidMonths: [...paidMonths],
+  };
+}
+
+function isEntryPaid(entry, month) {
+  return (entry.paidMonths || []).includes(month);
+}
+
+function startEdit(id) {
+  const entry = entries.find((item) => item.id === id);
+
+  if (!entry) {
+    return;
+  }
+
+  editEntryId = id;
+  form.description.value = entry.description;
+  form.amount.value = entry.amount;
+  typeSelect.value = entry.type;
+  cardNameInput.value = entry.cardName || "";
+  form.category.value = entry.category || "";
+  form.dueDate.value = entry.dueDate || "";
+  repeatSelect.value = entry.repeat || "once";
+  installmentsInput.value = entry.installments || 2;
+  currentInstallmentInput.value = 1;
+  submitEntry.textContent = "Salvar";
+  cancelEdit.classList.remove("is-hidden");
+  syncCardField();
+  syncInstallmentsField();
+  form.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function duplicateEntry(id) {
+  const entry = entries.find((item) => item.id === id);
+
+  if (!entry) {
+    return;
+  }
+
+  entries.push({
+    ...entry,
+    id: crypto.randomUUID(),
+    description: `${entry.description} cópia`,
+    paidMonths: [],
+    createdAt: new Date().toISOString(),
+  });
+}
+
+function resetForm() {
+  editEntryId = null;
+  form.reset();
+  typeSelect.value = "income";
+  repeatSelect.value = "once";
+  installmentsInput.value = "2";
+  currentInstallmentInput.value = "1";
+  submitEntry.textContent = "Adicionar";
+  cancelEdit.classList.add("is-hidden");
+  syncInstallmentsField();
+  syncCardField();
+}
+
+function getCreditCardTotals(monthEntries) {
+  const totals = monthEntries
+    .filter((entry) => entry.type === "credit")
+    .reduce((cards, entry) => {
+      const cardName = entry.cardName || "Cartão não informado";
+      cards[cardName] = (cards[cardName] || 0) + Number(entry.amount);
+
+      return cards;
+    }, {});
+
+  return Object.entries(totals).sort((a, b) => b[1] - a[1]);
+}
+
+function getCategoryTotals(monthEntries) {
+  const totals = monthEntries
+    .filter((entry) => entry.type !== "income")
+    .reduce((categories, entry) => {
+      const category = entry.category || "Sem categoria";
+      categories[category] = (categories[category] || 0) + Number(entry.amount);
+
+      return categories;
+    }, {});
+
+  return Object.entries(totals).sort((a, b) => b[1] - a[1]);
+}
+
+function getCardConfig(cardName) {
+  return cardSettings.find((card) => card.name === cardName) || { name: cardName, closingDay: 25, dueDay: 10 };
+}
+
+function getInvoiceMonth(cardName, date) {
+  const card = getCardConfig(cardName);
+  const [year, month, day] = date.split("-").map(Number);
+  const baseMonth = `${year}-${String(month).padStart(2, "0")}`;
+
+  if (day > card.closingDay) {
+    return shiftMonth(baseMonth, 1);
+  }
+
+  return baseMonth;
+}
+
+function parseCsvEntries(content) {
+  const lines = content.split(/\r?\n/).filter((line) => line.trim());
+
+  if (lines.length < 2) {
+    return [];
+  }
+
+  const delimiter = lines[0].includes(";") ? ";" : ",";
+  const headers = parseCsvLine(lines[0], delimiter).map(normalizeHeader);
+
+  return lines.slice(1).flatMap((line) => {
+    const values = parseCsvLine(line, delimiter);
+    const row = headers.reduce((data, header, index) => {
+      data[header] = values[index] || "";
+      return data;
+    }, {});
+    const amount = Number((row.valor || row.amount || "").replace(/\./g, "").replace(",", "."));
+
+    if (!row.descricao && !row.description) {
+      return [];
+    }
+
+    if (!amount || amount <= 0) {
+      return [];
+    }
+
+    const type = normalizeType(row.tipo || row.type);
+    const dueDate = normalizeDate(row.data || row.date || row.vencimento);
+
+    return [
+      {
+        id: crypto.randomUUID(),
+        startMonth: dueDate ? dueDate.slice(0, 7) : monthInput.value,
+        description: row.descricao || row.description,
+        amount,
+        type,
+        cardName: type === "credit" ? row.cartao || row.card || "Cartão não informado" : "",
+        category: row.categoria || row.category || "",
+        dueDate,
+        repeat: "once",
+        installments: 1,
+        paidMonths: [],
+        createdAt: new Date().toISOString(),
+      },
+    ];
+  });
+}
+
+function parseCsvLine(line, delimiter) {
+  const values = [];
+  let current = "";
+  let insideQuotes = false;
+
+  for (const char of line) {
+    if (char === '"') {
+      insideQuotes = !insideQuotes;
+    } else if (char === delimiter && !insideQuotes) {
+      values.push(current.trim());
+      current = "";
+    } else {
+      current += char;
+    }
+  }
+
+  values.push(current.trim());
+
+  return values.map((value) => value.replace(/^"|"$/g, ""));
+}
+
+function normalizeHeader(header) {
+  return header
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim();
+}
+
+function normalizeType(type) {
+  const normalized = normalizeHeader(type || "");
+
+  if (["entrada", "income", "salario"].includes(normalized)) {
+    return "income";
+  }
+
+  if (["conta", "bill"].includes(normalized)) {
+    return "bill";
+  }
+
+  if (["cartao", "credito", "credit"].includes(normalized)) {
+    return "credit";
+  }
+
+  return "expense";
+}
+
+function normalizeDate(date) {
+  if (!date) {
+    return "";
+  }
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return date;
+  }
+
+  const match = date.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+
+  if (!match) {
+    return "";
+  }
+
+  const [, day, month, year] = match;
+
+  return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
 }
 
 function getMonthOffset(startMonth, selectedMonth) {
@@ -608,16 +1106,26 @@ function syncCardField() {
   }
 }
 
-function getEntryCountText(count) {
-  if (count === 0) {
+function getEntryCountText(totalCount, visibleCount) {
+  if (totalCount === 0) {
     return "Nenhum lançamento neste mês.";
   }
 
-  if (count === 1) {
-    return "1 lançamento neste mês.";
+  const totalText = totalCount === 1 ? "1 lançamento" : `${totalCount} lançamentos`;
+
+  if (visibleCount !== totalCount) {
+    return `${visibleCount} de ${totalText} neste mês.`;
   }
 
-  return `${count} lançamentos neste mês.`;
+  return `${totalText} neste mês.`;
+}
+
+function formatDiff(value) {
+  if (value === 0) {
+    return currency.format(0);
+  }
+
+  return `${value > 0 ? "+" : "-"} ${currency.format(Math.abs(value))}`;
 }
 
 function getCurrentMonth() {
@@ -641,21 +1149,24 @@ function getMonthLabel(month) {
 }
 
 function loadEntries() {
-  const saved = localStorage.getItem(STORAGE_KEY);
+  return loadJson(STORAGE_KEY, []);
+}
+
+function loadJson(key, fallback) {
+  const saved = localStorage.getItem(key);
 
   if (!saved) {
-    return [];
+    return fallback;
   }
 
   try {
     return JSON.parse(saved);
   } catch {
-    return [];
+    return fallback;
   }
 }
 
-function getEntriesFromBackup(content) {
-  const backup = JSON.parse(content);
+function getEntriesFromBackup(backup) {
   const importedEntries = Array.isArray(backup) ? backup : backup.entries;
 
   if (!Array.isArray(importedEntries)) {
@@ -676,11 +1187,35 @@ function normalizeEntries(savedEntries) {
     repeat: entry.repeat || "once",
     installments: Number(entry.installments || 1),
     cardName: entry.cardName || "",
+    paidMonths: Array.isArray(entry.paidMonths) ? entry.paidMonths : [],
   }));
+}
+
+function normalizeCardSettings(savedCards) {
+  const cards = Array.isArray(savedCards) && savedCards.length ? savedCards : defaultCards;
+
+  return cards.slice(0, 3).map((card, index) => ({
+    id: card.id || `card-${index + 1}`,
+    name: card.name || `Cartão ${index + 1}`,
+    closingDay: clampDay(card.closingDay || 25),
+    dueDay: clampDay(card.dueDay || 10),
+  }));
+}
+
+function clampDay(value) {
+  return Math.min(Math.max(Number(value) || 1, 1), 31);
 }
 
 function saveEntries() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
+}
+
+function saveCardSettings() {
+  localStorage.setItem(CARD_SETTINGS_KEY, JSON.stringify(cardSettings));
+}
+
+function saveCategoryLimits() {
+  localStorage.setItem(CATEGORY_LIMITS_KEY, JSON.stringify(categoryLimits));
 }
 
 function loadTheme() {
@@ -704,7 +1239,7 @@ function applyTheme(theme) {
 }
 
 function escapeHtml(value) {
-  return value
+  return String(value || "")
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")

@@ -38,6 +38,10 @@
               Importar backup
               <input id="importBackup" type="file" accept="application/json,.json" />
             </label>
+            <label class="ghost-button import-button">
+              Importar CSV
+              <input id="importCsv" type="file" accept=".csv,text/csv" />
+            </label>
           </div>
         </div>
       </header>
@@ -113,7 +117,17 @@
           <div class="form-row">
             <label>
               Categoria
-              <input id="category" name="category" type="text" placeholder="Ex.: Casa, mercado" />
+              <input id="category" name="category" type="text" list="categoryOptions" placeholder="Ex.: Casa, mercado" />
+              <datalist id="categoryOptions">
+                <option value="Moradia"></option>
+                <option value="Mercado"></option>
+                <option value="Transporte"></option>
+                <option value="Saúde"></option>
+                <option value="Lazer"></option>
+                <option value="Assinaturas"></option>
+                <option value="Educação"></option>
+                <option value="Salário"></option>
+              </datalist>
             </label>
 
             <label>
@@ -143,10 +157,25 @@
             </label>
           </div>
 
-          <button type="submit">Adicionar</button>
+          <div class="form-actions">
+            <button id="submitEntry" type="submit">Adicionar</button>
+            <button id="cancelEdit" class="ghost-button is-hidden" type="button">Cancelar edição</button>
+          </div>
         </form>
 
         <section class="list-panel">
+          <div id="dashboardPanel" class="insight-panel"></div>
+
+          <div class="card-settings">
+            <div class="panel-header compact">
+              <div>
+                <h2>Cartões</h2>
+                <p>Fechamento e vencimento para organizar faturas.</p>
+              </div>
+            </div>
+            <div id="cardSettingsList" class="settings-list"></div>
+          </div>
+
           <div class="panel-header">
             <div>
               <h2>Lançamentos</h2>
@@ -154,6 +183,11 @@
             </div>
             <button id="clearMonth" class="ghost-button" type="button">Limpar únicos</button>
           </div>
+
+          <label class="search-field">
+            <span>Buscar</span>
+            <input id="searchInput" type="search" placeholder="Descrição, categoria, cartão..." />
+          </label>
 
           <div class="filters" role="tablist" aria-label="Filtrar lançamentos">
             <button class="filter-button active" type="button" data-filter="all">Todos</button>
@@ -164,6 +198,7 @@
           </div>
 
           <div id="cardBreakdown" class="card-breakdown" aria-label="Resumo por cartão"></div>
+          <div id="categoryBreakdown" class="card-breakdown" aria-label="Resumo por categoria"></div>
 
           <ul id="entryList" class="entry-list"></ul>
         </section>

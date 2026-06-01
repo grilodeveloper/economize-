@@ -153,7 +153,12 @@ h2 {
   background: var(--surface-deep);
   color: var(--text);
   min-height: 44px;
-  padding: 10px 12px;
+  padding: 12px 16px;
+}
+
+.control-field select,
+.entry-form select {
+  padding-right: 40px;
 }
 
 .control-field input:focus,
@@ -287,6 +292,10 @@ h2 {
   display: none;
 }
 
+.is-hidden {
+  display: none !important;
+}
+
 .card-breakdown.is-hidden {
   display: none;
 }
@@ -303,7 +312,11 @@ h2 {
 }
 
 .form-row.single-field {
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.form-row.single-field > label {
+  grid-column: 1;
 }
 
 .entry-form button,
@@ -316,6 +329,12 @@ h2 {
   min-height: 44px;
   padding: 10px 14px;
   font-weight: 700;
+}
+
+.form-actions {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
 }
 
 .entry-form button {
@@ -345,6 +364,82 @@ h2 {
   gap: 14px;
   min-width: 0;
   margin-bottom: 14px;
+}
+
+.panel-header.compact {
+  margin-bottom: 10px;
+}
+
+.insight-panel {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.insight-item {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-deep);
+  padding: 12px;
+}
+
+.insight-item span {
+  display: block;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.insight-item strong {
+  overflow-wrap: anywhere;
+}
+
+.card-settings {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-deep);
+  margin-bottom: 16px;
+  padding: 12px;
+}
+
+.settings-list {
+  display: grid;
+  gap: 10px;
+}
+
+.card-setting-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) 74px 74px;
+  gap: 8px;
+  min-width: 0;
+}
+
+.card-setting-row label,
+.search-field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.card-setting-row input,
+.search-field input {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  min-height: 40px;
+  padding: 9px 10px;
+}
+
+.search-field {
+  margin-bottom: 12px;
 }
 
 .filters {
@@ -408,6 +503,51 @@ h2 {
   white-space: nowrap;
 }
 
+.category-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.category-row span {
+  display: block;
+  color: var(--muted);
+  font-size: 0.86rem;
+  margin-bottom: 4px;
+}
+
+.category-row strong {
+  display: block;
+  font-size: 0.95rem;
+  margin-bottom: 8px;
+}
+
+.mini-track {
+  height: 7px;
+  border-radius: 999px;
+  background: var(--surface-soft);
+  overflow: hidden;
+}
+
+.mini-track div {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--green);
+}
+
+.tiny-button,
+.action-button {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  min-height: 34px;
+  padding: 6px 9px;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
 .entry-list {
   display: grid;
   gap: 10px;
@@ -426,10 +566,14 @@ h2 {
 
 .entry-item {
   display: grid;
-  grid-template-columns: 1fr auto auto;
+  grid-template-columns: 1fr auto minmax(210px, auto);
   gap: 12px;
   align-items: center;
   min-width: 0;
+}
+
+.entry-item.is-paid {
+  border-color: var(--green);
 }
 
 .entry-main {
@@ -457,6 +601,11 @@ h2 {
   padding: 4px 8px;
 }
 
+.paid-tag {
+  background: var(--green-soft);
+  color: var(--green);
+}
+
 .entry-value {
   font-weight: 800;
   white-space: nowrap;
@@ -472,6 +621,13 @@ h2 {
   background: var(--surface);
   color: var(--muted);
   font-size: 1.1rem;
+}
+
+.entry-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
 }
 
 .empty-state {
@@ -518,6 +674,14 @@ h2 {
   .workspace {
     grid-template-columns: 1fr;
   }
+
+  .entry-item {
+    grid-template-columns: 1fr;
+  }
+
+  .entry-actions {
+    justify-content: flex-start;
+  }
 }
 
 @media (max-width: 560px) {
@@ -552,6 +716,19 @@ h2 {
   .ghost-button,
   .entry-form button {
     width: 100%;
+  }
+
+  .form-actions,
+  .insight-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .card-setting-row {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .card-setting-row label:first-child {
+    grid-column: 1 / -1;
   }
 
   .control-field input,
@@ -622,10 +799,22 @@ h2 {
   .progress-labels,
   .card-breakdown-title,
   .card-breakdown-item,
+  .category-row,
   .entry-item {
     align-items: start;
     flex-direction: column;
     grid-template-columns: 1fr;
+  }
+
+  .entry-actions,
+  .action-button,
+  .tiny-button {
+    width: 100%;
+  }
+
+  .entry-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
   }
 
   .entry-value {
