@@ -44,6 +44,12 @@
   box-sizing: border-box;
 }
 
+html,
+body {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
 body {
   margin: 0;
   min-height: 100vh;
@@ -58,6 +64,7 @@ button,
 input,
 select {
   font: inherit;
+  min-width: 0;
 }
 
 button {
@@ -82,12 +89,14 @@ button {
   display: grid;
   gap: 12px;
   justify-items: end;
+  min-width: 0;
 }
 
 .settings-row {
   display: grid;
   grid-template-columns: minmax(150px, 1fr) minmax(130px, 0.8fr);
   gap: 10px;
+  min-width: 0;
   width: min(100%, 340px);
 }
 
@@ -126,6 +135,7 @@ h2 {
 .control-field {
   display: grid;
   gap: 8px;
+  min-width: 0;
   color: var(--muted);
   font-size: 0.85rem;
   font-weight: 600;
@@ -135,7 +145,9 @@ h2 {
 .control-field select,
 .entry-form input,
 .entry-form select {
+  display: block;
   width: 100%;
+  max-width: 100%;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--surface-deep);
@@ -161,6 +173,7 @@ h2 {
 .summary-card {
   display: grid;
   gap: 10px;
+  min-width: 0;
   min-height: 116px;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -232,10 +245,12 @@ h2 {
   grid-template-columns: minmax(280px, 380px) 1fr;
   gap: 18px;
   align-items: start;
+  min-width: 0;
 }
 
 .entry-form,
 .list-panel {
+  min-width: 0;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--surface);
@@ -262,6 +277,7 @@ h2 {
 .entry-form label {
   display: grid;
   gap: 7px;
+  min-width: 0;
   color: var(--muted);
   font-size: 0.86rem;
   font-weight: 600;
@@ -279,6 +295,7 @@ h2 {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 12px;
+  min-width: 0;
 }
 
 .repeat-row {
@@ -291,6 +308,9 @@ h2 {
 
 .entry-form button,
 .ghost-button {
+  display: inline-grid;
+  place-items: center;
+  max-width: 100%;
   border: 0;
   border-radius: 8px;
   min-height: 44px;
@@ -323,14 +343,17 @@ h2 {
   align-items: center;
   justify-content: space-between;
   gap: 14px;
+  min-width: 0;
   margin-bottom: 14px;
 }
 
 .filters {
   display: flex;
   gap: 8px;
+  max-width: 100%;
   overflow-x: auto;
   padding-bottom: 8px;
+  -webkit-overflow-scrolling: touch;
 }
 
 .filter-button {
@@ -406,6 +429,7 @@ h2 {
   grid-template-columns: 1fr auto auto;
   gap: 12px;
   align-items: center;
+  min-width: 0;
 }
 
 .entry-main {
@@ -474,6 +498,10 @@ h2 {
     justify-content: stretch;
   }
 
+  .topbar-actions {
+    width: 100%;
+  }
+
   .settings-row {
     width: 100%;
   }
@@ -510,6 +538,10 @@ h2 {
   .settings-row,
   .backup-actions {
     grid-template-columns: 1fr;
+  }
+
+  .settings-row {
+    width: 100%;
   }
 
   .backup-actions {
@@ -558,6 +590,26 @@ h2 {
     grid-template-columns: 1fr;
   }
 
+  .control-field,
+  .entry-form label,
+  .form-row > *,
+  .repeat-row > *,
+  .panel-header > *,
+  .entry-main,
+  .entry-list,
+  .empty-state {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .control-field input,
+  .control-field select,
+  .entry-form input,
+  .entry-form select {
+    appearance: none;
+    -webkit-appearance: none;
+  }
+
   .filters {
     margin: 0 -14px;
     padding: 0 14px 10px;
@@ -582,5 +634,15 @@ h2 {
 
   .delete-button {
     width: 100%;
+  }
+}
+
+@media (max-width: 390px) {
+  .summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .progress-labels {
+    gap: 6px;
   }
 }
