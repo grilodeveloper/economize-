@@ -16,12 +16,24 @@ const repeatLabels = {
   installment: "Parcelado",
 };
 
-const defaultCategories = ["Moradia", "Mercado", "Transporte", "Saúde", "Lazer", "Assinaturas", "Educação", "Salário"];
+const defaultCategories = [
+  "Alimentação",
+  "Assinaturas",
+  "Carro",
+  "Casa",
+  "Educação",
+  "Gasto",
+  "Lazer",
+  "Moradia",
+  "Presente",
+  "Salário",
+  "Saúde",
+];
 
 const defaultCards = [
-  { id: "card-1", name: "Cartão 1", closingDay: 25, dueDay: 5 },
-  { id: "card-2", name: "Cartão 2", closingDay: 25, dueDay: 10 },
-  { id: "card-3", name: "Cartão 3", closingDay: 25, dueDay: 15 },
+  { id: "card-1", name: "Nubank", closingDay: 25, dueDay: 5 },
+  { id: "card-2", name: "Nu Empresas", closingDay: 25, dueDay: 10 },
+  { id: "card-3", name: "Mercado Pago", closingDay: 25, dueDay: 15 },
 ];
 
 const currency = new Intl.NumberFormat("pt-BR", {
@@ -1196,10 +1208,20 @@ function normalizeCardSettings(savedCards) {
 
   return cards.slice(0, 3).map((card, index) => ({
     id: card.id || `card-${index + 1}`,
-    name: card.name || `Cartão ${index + 1}`,
+    name: getCardDisplayName(card.name, index),
     closingDay: clampDay(card.closingDay || 25),
     dueDay: clampDay(card.dueDay || 10),
   }));
+}
+
+function getCardDisplayName(name, index) {
+  const genericName = `Cartão ${index + 1}`;
+
+  if (!name || name === genericName) {
+    return defaultCards[index]?.name || genericName;
+  }
+
+  return name;
 }
 
 function clampDay(value) {

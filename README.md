@@ -47,7 +47,7 @@ Exemplo: se uma compra está na terceira parcela de doze, preencha `Total` como 
 
 Ao escolher o tipo `Cartão`, o campo `Cartão usado` aparece automaticamente.
 
-Você pode usar as sugestões `Cartão 1`, `Cartão 2` e `Cartão 3`, ou digitar nomes reais como `Nubank`, `Inter` e `Itaú`.
+Você pode usar as sugestões `Nubank`, `Nu Empresas` e `Mercado Pago`, ou digitar outro nome se criar um novo cartão.
 
 No painel `Cartões`, configure o dia de fechamento e vencimento de cada cartão. Compras no cartão mostram automaticamente a fatura correspondente.
 
