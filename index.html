@@ -15,6 +15,22 @@
         </div>
 
         <div class="topbar-actions">
+          <div class="settings-row">
+            <label class="control-field">
+              <span>Mês</span>
+              <input id="monthInput" type="month" />
+            </label>
+
+            <label class="control-field">
+              <span>Tema</span>
+              <select id="themeSelect">
+                <option value="system">Sistema</option>
+                <option value="dark">Escuro</option>
+                <option value="light">Claro</option>
+              </select>
+            </label>
+          </div>
+
           <div class="backup-actions">
             <button id="exportBackup" class="ghost-button" type="button">Exportar backup</button>
             <label class="ghost-button import-button">
@@ -22,11 +38,6 @@
               <input id="importBackup" type="file" accept="application/json,.json" />
             </label>
           </div>
-
-          <label class="month-picker">
-            <span>Mês</span>
-            <input id="monthInput" type="month" />
-          </label>
         </div>
       </header>
 
@@ -121,8 +132,13 @@
             </label>
 
             <label id="installmentsField" class="is-hidden">
-              Parcelas
+              Total
               <input id="installments" name="installments" type="number" min="2" step="1" value="2" />
+            </label>
+
+            <label id="currentInstallmentField" class="is-hidden">
+              Parcela atual
+              <input id="currentInstallment" name="currentInstallment" type="number" min="1" step="1" value="1" />
             </label>
           </div>
 

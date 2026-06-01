@@ -21,6 +21,7 @@ Os dados ficam salvos no próprio navegador usando `localStorage`, então não p
 - Remove lançamentos individuais
 - Limpa os lançamentos únicos do mês atual sem apagar fixos e parcelados
 - Exporta e importa backup dos dados em arquivo `.json`
+- Alterna o tema entre sistema, escuro e claro
 
 ## Como lançar contas automáticas
 
@@ -30,7 +31,9 @@ Use o campo `Recorrência`:
 - `Fixo mensal`: aparece automaticamente em todos os meses a partir da data inicial.
 - `Parcelado`: aparece automaticamente pelo número de parcelas informado.
 
-Para compras parceladas, informe o valor de cada parcela no campo `Valor`.
+Para compras parceladas, informe o valor de cada parcela no campo `Valor`, o total de parcelas no campo `Total` e em qual parcela a cobrança está no campo `Parcela atual`.
+
+Exemplo: se uma compra está na terceira parcela de doze, preencha `Total` como `12` e `Parcela atual` como `3`. O mês atual aparecerá como `Parcelado 3/12`.
 
 ## Como usar cartões
 

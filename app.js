@@ -1,4 +1,5 @@
 const STORAGE_KEY = "economize.entries.v1";
+const THEME_KEY = "economize.theme.v1";
 
 const typeLabels = {
   income: "Entrada",
@@ -36,17 +37,23 @@ const repeatSelect = document.querySelector("#repeat");
 const repeatRow = document.querySelector("#repeatRow");
 const installmentsField = document.querySelector("#installmentsField");
 const installmentsInput = document.querySelector("#installments");
+const currentInstallmentField = document.querySelector("#currentInstallmentField");
+const currentInstallmentInput = document.querySelector("#currentInstallment");
 const typeSelect = document.querySelector("#type");
 const cardField = document.querySelector("#cardField");
 const cardNameInput = document.querySelector("#cardName");
 const cardBreakdown = document.querySelector("#cardBreakdown");
 const exportBackup = document.querySelector("#exportBackup");
 const importBackup = document.querySelector("#importBackup");
+const themeSelect = document.querySelector("#themeSelect");
+const systemTheme = window.matchMedia("(prefers-color-scheme: dark)");
 
 let entries = normalizeEntries(loadEntries());
 let activeFilter = "all";
 
 monthInput.value = getCurrentMonth();
+themeSelect.value = loadTheme();
+applyTheme(themeSelect.value);
 syncInstallmentsField();
 syncCardField();
 render();
@@ -61,9 +68,17 @@ form.addEventListener("submit", (event) => {
     return;
   }
 
+  const installments = getInstallments(formData);
+  const currentInstallment = getCurrentInstallment(formData);
+
+  if (formData.get("repeat") === "installment" && currentInstallment > installments) {
+    alert("A parcela atual não pode ser maior que o total de parcelas.");
+    return;
+  }
+
   entries.push({
     id: crypto.randomUUID(),
-    startMonth: getEntryStartMonth(formData.get("dueDate")),
+    startMonth: getEntryStartMonth(formData.get("dueDate"), currentInstallment),
     description: formData.get("description").trim(),
     amount,
     type: formData.get("type"),
@@ -71,7 +86,7 @@ form.addEventListener("submit", (event) => {
     category: formData.get("category").trim(),
     dueDate: formData.get("dueDate"),
     repeat: formData.get("repeat"),
-    installments: getInstallments(formData),
+    installments,
     createdAt: new Date().toISOString(),
   });
 
@@ -80,6 +95,7 @@ form.addEventListener("submit", (event) => {
   typeSelect.value = "income";
   repeatSelect.value = "once";
   installmentsInput.value = "2";
+  currentInstallmentInput.value = "1";
   syncInstallmentsField();
   syncCardField();
   render();
@@ -90,6 +106,15 @@ repeatSelect.addEventListener("change", syncInstallmentsField);
 typeSelect.addEventListener("change", syncCardField);
 exportBackup.addEventListener("click", downloadBackup);
 importBackup.addEventListener("change", importBackupFile);
+themeSelect.addEventListener("change", () => {
+  saveTheme(themeSelect.value);
+  applyTheme(themeSelect.value);
+});
+systemTheme.addEventListener("change", () => {
+  if (themeSelect.value === "system") {
+    applyTheme("system");
+  }
+});
 
 clearMonth.addEventListener("click", () => {
   const removableEntries = entries.filter((entry) => entry.repeat === "once" && entry.startMonth === monthInput.value);
@@ -345,12 +370,14 @@ function getOccurrenceDate(entry, selectedMonth) {
   return `${selectedMonth}-${safeDay}`;
 }
 
-function getEntryStartMonth(dueDate) {
-  if (!dueDate) {
-    return monthInput.value;
+function getEntryStartMonth(dueDate, currentInstallment) {
+  const referenceMonth = dueDate ? dueDate.slice(0, 7) : monthInput.value;
+
+  if (repeatSelect.value !== "installment") {
+    return referenceMonth;
   }
 
-  return dueDate.slice(0, 7);
+  return shiftMonth(referenceMonth, -(currentInstallment - 1));
 }
 
 function getInstallments(formData) {
@@ -359,6 +386,14 @@ function getInstallments(formData) {
   }
 
   return Math.max(Number(formData.get("installments")) || 2, 2);
+}
+
+function getCurrentInstallment(formData) {
+  if (formData.get("repeat") !== "installment") {
+    return 1;
+  }
+
+  return Math.max(Number(formData.get("currentInstallment")) || 1, 1);
 }
 
 function getCardName(formData) {
@@ -382,12 +417,23 @@ function getLastDayOfMonth(month) {
   return new Date(year, monthNumber, 0).getDate();
 }
 
+function shiftMonth(month, offset) {
+  const [year, monthNumber] = month.split("-").map(Number);
+  const date = new Date(year, monthNumber - 1 + offset, 1);
+  const shiftedYear = date.getFullYear();
+  const shiftedMonth = String(date.getMonth() + 1).padStart(2, "0");
+
+  return `${shiftedYear}-${shiftedMonth}`;
+}
+
 function syncInstallmentsField() {
   const isInstallment = repeatSelect.value === "installment";
 
   installmentsField.classList.toggle("is-hidden", !isInstallment);
+  currentInstallmentField.classList.toggle("is-hidden", !isInstallment);
   repeatRow.classList.toggle("single-field", !isInstallment);
   installmentsInput.required = isInstallment;
+  currentInstallmentInput.required = isInstallment;
 }
 
 function syncCardField() {
@@ -467,6 +513,26 @@ function normalizeEntries(savedEntries) {
 
 function saveEntries() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
+}
+
+function loadTheme() {
+  const savedTheme = localStorage.getItem(THEME_KEY);
+
+  if (["system", "dark", "light"].includes(savedTheme)) {
+    return savedTheme;
+  }
+
+  return "dark";
+}
+
+function saveTheme(theme) {
+  localStorage.setItem(THEME_KEY, theme);
+}
+
+function applyTheme(theme) {
+  const resolvedTheme = theme === "system" ? (systemTheme.matches ? "dark" : "light") : theme;
+
+  document.documentElement.dataset.theme = resolvedTheme;
 }
 
 function escapeHtml(value) {
