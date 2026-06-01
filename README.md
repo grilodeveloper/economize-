@@ -21,6 +21,7 @@ Os dados ficam salvos no próprio navegador usando `localStorage`, então não p
 - Remove lançamentos individuais
 - Limpa os lançamentos únicos do mês atual sem apagar fixos e parcelados
 - Exporta e importa backup dos dados em arquivo `.json`
+- Exporta relatório mensal em PDF pela impressão do navegador
 - Alterna o tema entre sistema, escuro e claro
 
 ## Como lançar contas automáticas
@@ -46,6 +47,10 @@ Você pode usar as sugestões `Cartão 1`, `Cartão 2` e `Cartão 3`, ou digitar
 Use `Exportar backup` para baixar um arquivo `.json` com todos os lançamentos salvos no navegador.
 
 Use `Importar backup` para carregar esse arquivo depois. A importação substitui os dados atuais do navegador pelo conteúdo do backup.
+
+## PDF
+
+Use `Exportar PDF` para gerar um relatório do mês selecionado. O navegador abrirá a tela de impressão, onde você pode escolher `Salvar como PDF`.
 
 ## Próximos passos possíveis
 

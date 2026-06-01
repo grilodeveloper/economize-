@@ -44,6 +44,7 @@ const cardField = document.querySelector("#cardField");
 const cardNameInput = document.querySelector("#cardName");
 const cardBreakdown = document.querySelector("#cardBreakdown");
 const exportBackup = document.querySelector("#exportBackup");
+const exportPdf = document.querySelector("#exportPdf");
 const importBackup = document.querySelector("#importBackup");
 const themeSelect = document.querySelector("#themeSelect");
 const systemTheme = window.matchMedia("(prefers-color-scheme: dark)");
@@ -105,6 +106,7 @@ monthInput.addEventListener("change", render);
 repeatSelect.addEventListener("change", syncInstallmentsField);
 typeSelect.addEventListener("change", syncCardField);
 exportBackup.addEventListener("click", downloadBackup);
+exportPdf.addEventListener("click", exportMonthPdf);
 importBackup.addEventListener("change", importBackupFile);
 themeSelect.addEventListener("change", () => {
   saveTheme(themeSelect.value);
@@ -271,6 +273,165 @@ function downloadBackup() {
   link.download = `economize-backup-${getCurrentMonth()}.json`;
   link.click();
   URL.revokeObjectURL(url);
+}
+
+function exportMonthPdf() {
+  const monthEntries = getMonthEntries();
+  const reportWindow = window.open("", "_blank");
+
+  if (!reportWindow) {
+    alert("Não consegui abrir a janela do relatório. Verifique se o navegador bloqueou pop-ups.");
+    return;
+  }
+
+  reportWindow.document.write(getPdfReportHtml(monthEntries));
+  reportWindow.document.close();
+  reportWindow.focus();
+
+  reportWindow.addEventListener("load", () => {
+    reportWindow.print();
+  });
+}
+
+function getPdfReportHtml(monthEntries) {
+  const income = sumByType(monthEntries, "income");
+  const bills = sumByType(monthEntries, "bill");
+  const expenses = sumByType(monthEntries, "expense");
+  const credit = sumByType(monthEntries, "credit");
+  const totalSpent = bills + expenses + credit;
+  const monthBalance = income - totalSpent;
+  const creditCards = getCreditCardTotals(monthEntries);
+  const rows = [...monthEntries]
+    .sort((a, b) => (a.occurrenceDate || "9999-12-31").localeCompare(b.occurrenceDate || "9999-12-31"))
+    .map(getPdfEntryRow)
+    .join("");
+  const cardRows = creditCards.map(([cardName, total]) => `<li><span>${escapeHtml(cardName)}</span><strong>${currency.format(total)}</strong></li>`).join("");
+
+  return `
+    <!doctype html>
+    <html lang="pt-BR">
+      <head>
+        <meta charset="UTF-8" />
+        <title>Economize - ${getMonthLabel(monthInput.value)}</title>
+        <style>
+          * { box-sizing: border-box; }
+          body {
+            margin: 0;
+            color: #1f241f;
+            background: #fff;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+          }
+          main { max-width: 960px; margin: 0 auto; padding: 32px; }
+          header { display: flex; justify-content: space-between; gap: 24px; border-bottom: 1px solid #d9dfd6; padding-bottom: 20px; margin-bottom: 22px; }
+          h1 { margin: 0 0 6px; font-size: 28px; }
+          p { margin: 0; color: #687066; }
+          .date { text-align: right; font-size: 13px; }
+          .summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 18px; }
+          .card { border: 1px solid #d9dfd6; border-radius: 8px; padding: 12px; }
+          .card span { display: block; color: #687066; font-size: 12px; font-weight: 700; margin-bottom: 8px; }
+          .card strong { font-size: 18px; overflow-wrap: anywhere; }
+          .income { color: #2f7d54; }
+          .expense { color: #b94f49; }
+          .balance { color: #356f9f; }
+          .credit { color: #ad812b; }
+          section { margin-top: 22px; }
+          h2 { margin: 0 0 10px; font-size: 16px; }
+          ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+          li { display: flex; justify-content: space-between; gap: 12px; border-bottom: 1px solid #edf1ea; padding: 7px 0; }
+          table { width: 100%; border-collapse: collapse; font-size: 13px; }
+          th, td { border-bottom: 1px solid #edf1ea; padding: 9px 8px; text-align: left; vertical-align: top; }
+          th { color: #687066; font-size: 11px; text-transform: uppercase; }
+          td:last-child, th:last-child { text-align: right; white-space: nowrap; }
+          .empty { border: 1px solid #d9dfd6; border-radius: 8px; padding: 16px; color: #687066; text-align: center; }
+          @page { margin: 16mm; }
+          @media print {
+            main { padding: 0; }
+            header { break-after: avoid; }
+            section, table { break-inside: avoid; }
+          }
+          @media (max-width: 720px) {
+            main { padding: 20px; }
+            header, li { flex-direction: column; }
+            .date { text-align: left; }
+            .summary { grid-template-columns: 1fr 1fr; }
+          }
+        </style>
+      </head>
+      <body>
+        <main>
+          <header>
+            <div>
+              <h1>Economize!</h1>
+              <p>Relatório financeiro de ${getMonthLabel(monthInput.value)}</p>
+            </div>
+            <p class="date">Gerado em ${new Date().toLocaleDateString("pt-BR")}</p>
+          </header>
+
+          <div class="summary">
+            <div class="card"><span>Entradas</span><strong class="income">${currency.format(income)}</strong></div>
+            <div class="card"><span>Gastos</span><strong class="expense">${currency.format(totalSpent)}</strong></div>
+            <div class="card"><span>Saldo previsto</span><strong class="balance">${currency.format(monthBalance)}</strong></div>
+            <div class="card"><span>Cartão</span><strong class="credit">${currency.format(credit)}</strong></div>
+          </div>
+
+          <section>
+            <h2>Cartões</h2>
+            ${cardRows ? `<ul>${cardRows}</ul>` : `<div class="empty">Nenhum gasto de cartão neste mês.</div>`}
+          </section>
+
+          <section>
+            <h2>Lançamentos</h2>
+            ${
+              rows
+                ? `<table>
+                    <thead>
+                      <tr>
+                        <th>Data</th>
+                        <th>Descrição</th>
+                        <th>Tipo</th>
+                        <th>Categoria</th>
+                        <th>Cartão</th>
+                        <th>Valor</th>
+                      </tr>
+                    </thead>
+                    <tbody>${rows}</tbody>
+                  </table>`
+                : `<div class="empty">Nenhum lançamento neste mês.</div>`
+            }
+          </section>
+        </main>
+      </body>
+    </html>
+  `;
+}
+
+function getPdfEntryRow(entry) {
+  const signal = entry.type === "income" ? "" : "-";
+  const cardName = entry.type === "credit" ? entry.cardName || "Cartão não informado" : "";
+
+  return `
+    <tr>
+      <td>${entry.occurrenceDate ? formatDate(entry.occurrenceDate) : "Sem data"}</td>
+      <td>${escapeHtml(entry.description)}<br><small>${getRepeatLabel(entry)}</small></td>
+      <td>${typeLabels[entry.type]}</td>
+      <td>${escapeHtml(entry.category || "Sem categoria")}</td>
+      <td>${escapeHtml(cardName)}</td>
+      <td>${signal}${currency.format(entry.amount)}</td>
+    </tr>
+  `;
+}
+
+function getCreditCardTotals(monthEntries) {
+  const totals = monthEntries
+    .filter((entry) => entry.type === "credit")
+    .reduce((cards, entry) => {
+      const cardName = entry.cardName || "Cartão não informado";
+      cards[cardName] = (cards[cardName] || 0) + Number(entry.amount);
+
+      return cards;
+    }, {});
+
+  return Object.entries(totals).sort((a, b) => b[1] - a[1]);
 }
 
 function importBackupFile(event) {
@@ -470,6 +631,13 @@ function formatDate(date) {
   const [year, month, day] = date.split("-");
 
   return `${day}/${month}/${year}`;
+}
+
+function getMonthLabel(month) {
+  const [year, monthNumber] = month.split("-").map(Number);
+  const date = new Date(year, monthNumber - 1, 1);
+
+  return date.toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
 }
 
 function loadEntries() {
