@@ -205,14 +205,14 @@ entryList.addEventListener("click", (event) => {
     return;
   }
 
-  const { id, action: actionName, month } = action.dataset;
+  const { id, action: actionName, paidKey } = action.dataset;
 
   if (actionName === "delete") {
     entries = entries.filter((entry) => entry.id !== id);
   }
 
   if (actionName === "paid") {
-    entries = entries.map((entry) => (entry.id === id ? togglePaidMonth(entry, month) : entry));
+    entries = entries.map((entry) => (entry.id === id ? togglePaidOccurrence(entry, paidKey) : entry));
   }
 
   if (actionName === "edit") {
@@ -513,7 +513,7 @@ function renderEntries(visibleEntries) {
           ${
             entry.type === "income"
               ? ""
-              : `<button class="action-button" type="button" data-action="paid" data-id="${entry.id}" data-month="${entry.occurrenceMonth}">${entry.isPaid ? "Desfazer" : "Pagar"}</button>`
+              : `<button class="action-button" type="button" data-action="paid" data-id="${entry.id}" data-paid-key="${entry.paidKey}">${entry.isPaid ? "Desfazer" : "Pagar"}</button>`
           }
           <button class="action-button" type="button" data-action="edit" data-id="${entry.id}">Editar</button>
           <button class="action-button" type="button" data-action="duplicate" data-id="${entry.id}">Duplicar</button>
@@ -842,14 +842,17 @@ function getOccurrenceForMonth(entry, selectedMonth) {
   }
 
   const occurrenceDate = getOccurrenceDate(entry, selectedMonth);
+  const installmentNumber = repeat === "installment" ? monthOffset + 1 : null;
+  const paidKey = getPaidKey(selectedMonth, installmentNumber, repeat);
 
   return [
     {
       ...entry,
       occurrenceMonth: selectedMonth,
       occurrenceDate,
-      installmentNumber: repeat === "installment" ? monthOffset + 1 : null,
-      isPaid: isEntryPaid(entry, selectedMonth),
+      installmentNumber,
+      paidKey,
+      isPaid: isEntryPaid(entry, paidKey),
       invoiceMonth: entry.type === "credit" ? getInvoiceMonth(entry.cardName, occurrenceDate || `${selectedMonth}-01`) : "",
     },
   ];
@@ -917,13 +920,13 @@ function getCardName(formData) {
   return formData.get("cardName").trim() || "Cartão não informado";
 }
 
-function togglePaidMonth(entry, month) {
+function togglePaidOccurrence(entry, paidKey) {
   const paidMonths = new Set(entry.paidMonths || []);
 
-  if (paidMonths.has(month)) {
-    paidMonths.delete(month);
+  if (paidMonths.has(paidKey)) {
+    paidMonths.delete(paidKey);
   } else {
-    paidMonths.add(month);
+    paidMonths.add(paidKey);
   }
 
   return {
@@ -932,8 +935,22 @@ function togglePaidMonth(entry, month) {
   };
 }
 
-function isEntryPaid(entry, month) {
-  return (entry.paidMonths || []).includes(month);
+function isEntryPaid(entry, paidKey) {
+  const legacyMonth = paidKey.split("::")[0];
+
+  return (entry.paidMonths || []).includes(paidKey) || (entry.paidMonths || []).includes(legacyMonth);
+}
+
+function getPaidKey(month, installmentNumber, repeat) {
+  if (repeat === "installment") {
+    return `${month}::${installmentNumber}`;
+  }
+
+  if (repeat === "fixed") {
+    return `${month}::fixed`;
+  }
+
+  return `${month}::once`;
 }
 
 function startEdit(id) {
