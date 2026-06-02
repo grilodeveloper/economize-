@@ -411,8 +411,9 @@ h2 {
 
 .card-setting-row {
   display: grid;
-  grid-template-columns: minmax(120px, 1fr) 74px 74px;
+  grid-template-columns: minmax(120px, 1fr) 74px 74px auto;
   gap: 8px;
+  align-items: end;
   min-width: 0;
 }
 
@@ -508,6 +509,14 @@ h2 {
   grid-template-columns: 1fr auto;
   gap: 12px;
   align-items: center;
+  border-radius: 8px;
+  cursor: pointer;
+  padding: 6px;
+  margin: -6px;
+}
+
+.category-row.is-active {
+  background: var(--green-soft);
 }
 
 .category-row span {
@@ -728,6 +737,10 @@ h2 {
   }
 
   .card-setting-row label:first-child {
+    grid-column: 1 / -1;
+  }
+
+  .card-setting-row .tiny-button {
     grid-column: 1 / -1;
   }
 

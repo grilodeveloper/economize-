@@ -19,9 +19,11 @@ Os dados ficam salvos no próprio navegador usando `localStorage`, então não p
 - Mostra um resumo de gastos separado por cartão
 - Mostra resumo por categoria com limites mensais
 - Configura fechamento e vencimento dos 3 cartões
+- Adiciona novos cartões pela tela de cartões
 - Marca contas como pagas ou pendentes
 - Edita e duplica lançamentos
 - Busca lançamentos por descrição, categoria, cartão ou tipo
+- Filtra lançamentos ao clicar em uma categoria do resumo
 - Compara gastos e saldo com o mês anterior
 - Filtra os lançamentos por tipo
 - Remove lançamentos individuais
@@ -51,9 +53,11 @@ Você pode usar as sugestões `Nubank`, `Nu Empresas` e `Mercado Pago`, ou digit
 
 No painel `Cartões`, configure o dia de fechamento e vencimento de cada cartão. Compras no cartão mostram automaticamente a fatura correspondente.
 
+Use `Adicionar cartão` para criar novos cartões. Cartões sem lançamentos podem ser removidos.
+
 ## Categorias e limites
 
-O resumo por categoria mostra quanto foi gasto em cada área do mês.
+O resumo por categoria mostra quanto foi gasto em cada área do mês. Clique em uma categoria para filtrar os lançamentos daquela categoria.
 
 Use `Definir limite` para criar uma meta mensal para uma categoria. Para remover um limite, edite e deixe o valor vazio ou inválido.
 
