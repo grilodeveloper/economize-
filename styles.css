@@ -412,27 +412,24 @@ h2 {
 .card-setting-row {
   display: grid;
   grid-template-columns: 72px minmax(0, 1fr) auto;
-  gap: 12px;
+  gap: 10px;
   align-items: center;
   min-width: 0;
   border: 1px solid var(--line);
-  border-radius: 24px;
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--surface) 88%, white 12%), var(--surface-deep));
-  padding: 14px;
-  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.12);
+  border-radius: 16px;
+  background: var(--surface-deep);
+  padding: 10px 12px;
+  box-shadow: none;
 }
 
 .card-setting-preview {
   display: grid;
   place-items: center;
-  min-height: 76px;
-  border: 1px solid color-mix(in srgb, var(--card-accent) 30%, var(--line));
-  border-radius: 22px;
-  background:
-    radial-gradient(circle at top, color-mix(in srgb, var(--card-accent) 18%, transparent), transparent 65%),
-    color-mix(in srgb, var(--card-accent) 12%, var(--surface));
-  padding: 8px;
+  min-height: 58px;
+  border: 1px solid color-mix(in srgb, var(--card-accent) 26%, var(--line));
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--card-accent) 10%, var(--surface));
+  padding: 6px;
   cursor: pointer;
   position: relative;
   overflow: hidden;
@@ -441,13 +438,13 @@ h2 {
 .card-chip {
   display: inline-grid;
   place-items: center;
-  min-width: 48px;
-  min-height: 48px;
-  border-radius: 18px;
+  min-width: 36px;
+  min-height: 36px;
+  border-radius: 12px;
   background: var(--card-accent);
   color: #fff;
-  padding: 6px 10px;
-  font-size: 0.72rem;
+  padding: 4px 8px;
+  font-size: 0.68rem;
   font-weight: 800;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -464,7 +461,9 @@ h2 {
 
 .card-setting-main {
   display: grid;
-  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px 16px;
+  align-items: center;
   min-width: 0;
 }
 
@@ -472,12 +471,12 @@ h2 {
   width: 100%;
   min-width: 0;
   border: 1px solid transparent;
-  border-radius: 16px;
+  border-radius: 12px;
   background: transparent;
   color: var(--text);
-  min-height: 46px;
-  padding: 0 8px;
-  font-size: 1.1rem;
+  min-height: 40px;
+  padding: 0 4px;
+  font-size: 0.98rem;
   font-weight: 800;
   letter-spacing: -0.02em;
 }
@@ -485,32 +484,32 @@ h2 {
 .card-name-input:focus {
   border-color: var(--line);
   outline: 2px solid var(--green-focus);
-  background: color-mix(in srgb, var(--surface) 88%, white 12%);
-  padding: 0 12px;
+  background: var(--surface);
+  padding: 0 10px;
 }
 
 .card-setting-meta {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, auto));
+  display: flex;
+  flex-wrap: wrap;
   gap: 10px;
-  align-items: end;
-  justify-content: start;
+  align-items: center;
+  justify-content: flex-end;
 }
 
 .card-setting-meta label,
 .search-field {
   display: grid;
-  gap: 6px;
+  gap: 4px;
   min-width: 0;
   color: var(--muted);
-  font-size: 0.72rem;
+  font-size: 0.68rem;
   font-weight: 700;
   letter-spacing: 0.03em;
   text-transform: uppercase;
 }
 
 .card-setting-meta label span {
-  padding-left: 8px;
+  padding-left: 6px;
 }
 
 .card-setting-meta input,
@@ -519,39 +518,39 @@ h2 {
   min-width: 0;
   border: 1px solid var(--line);
   border-radius: 999px;
-  background: color-mix(in srgb, var(--surface) 82%, white 18%);
+  background: var(--surface);
   color: var(--text);
-  min-height: 44px;
-  padding: 9px 16px;
+  min-height: 36px;
+  padding: 6px 14px;
 }
 
 .card-close-field,
 .card-due-field {
-  width: 96px;
+  width: 82px;
 }
 
 .toggle-label input[type="checkbox"] {
-  width: 24px;
-  height: 24px;
+  width: 20px;
+  height: 20px;
   min-height: auto;
   accent-color: var(--green);
 }
 
 .card-active-field {
-  align-self: end;
+  align-self: center;
   justify-items: start;
 }
 
 .card-actions-menu {
   position: relative;
-  align-self: start;
+  align-self: center;
 }
 
 .card-actions-trigger {
-  min-width: 56px;
-  min-height: 44px;
+  min-width: 44px;
+  min-height: 36px;
   border-radius: 999px;
-  padding: 10px 14px;
+  padding: 6px 10px;
 }
 
 .card-actions-menu summary {
@@ -922,11 +921,12 @@ h2 {
   }
 
   .card-setting-main {
+    grid-template-columns: 1fr;
     gap: 8px;
   }
 
   .card-setting-meta {
-    grid-template-columns: 1fr 1fr;
+    justify-content: start;
   }
 
   .card-close-field,
