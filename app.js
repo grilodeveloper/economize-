@@ -31,10 +31,12 @@ const defaultCategories = [
 ];
 
 const defaultCards = [
-  { id: "card-1", name: "Nubank", closingDay: 25, dueDay: 5 },
-  { id: "card-2", name: "Nu Empresas", closingDay: 25, dueDay: 10 },
-  { id: "card-3", name: "Mercado Pago", closingDay: 25, dueDay: 15 },
+  { id: "card-1", name: "Nubank", closingDay: 25, dueDay: 5, color: "#7c3aed", active: true },
+  { id: "card-2", name: "Nu Empresas", closingDay: 25, dueDay: 10, color: "#0f766e", active: true },
+  { id: "card-3", name: "Mercado Pago", closingDay: 25, dueDay: 15, color: "#2563eb", active: true },
 ];
+
+const cardColorPalette = ["#7c3aed", "#0f766e", "#2563eb", "#b45309", "#be123c", "#1d4ed8", "#15803d"];
 
 const currency = new Intl.NumberFormat("pt-BR", {
   style: "currency",
@@ -141,6 +143,20 @@ form.addEventListener("submit", (event) => {
   saveEntries();
   renderDatalists();
 
+  if (!isEditing) {
+    const nextMonth = getNextMonthAfterCardDue(entry);
+
+    if (nextMonth) {
+      const confirmed = confirm(
+        `Esse lançamento foi registrado após o vencimento do cartão ${entry.cardName}. Deseja avançar para ${getMonthLabel(nextMonth)}?`,
+      );
+
+      if (confirmed) {
+        monthInput.value = nextMonth;
+      }
+    }
+  }
+
   if (isEditing) {
     clearListFilters();
   }
@@ -241,11 +257,12 @@ cardSettingsList.addEventListener("input", (event) => {
     card.id === cardId
       ? {
           ...card,
-          [cardSetting]: cardSetting === "name" ? input.value.trim() : clampDay(input.value),
+          [cardSetting]: getCardSettingValue(cardSetting, input),
         }
       : card,
   );
   saveCardSettings();
+  renderCardSettings();
   renderDatalists();
   render();
 });
@@ -278,44 +295,6 @@ cardSettingsList.addEventListener("click", (event) => {
 });
 
 categoryBreakdown.addEventListener("click", (event) => {
-  const payButton = event.target.closest("[data-pay-category]");
-
-  if (payButton) {
-    markCategoryEntriesAsPaid(payButton.dataset.payCategory);
-    return;
-  }
-
-  const unpayButton = event.target.closest("[data-unpay-category]");
-
-  if (unpayButton) {
-    markCategoryEntriesAsUnpaid(unpayButton.dataset.unpayCategory);
-    return;
-  }
-
-  const button = event.target.closest("[data-limit]");
-
-  if (button) {
-    const category = button.dataset.limit;
-    const currentLimit = categoryLimits[category] || "";
-    const answer = prompt(`Limite mensal para ${category}`, currentLimit);
-
-    if (answer === null) {
-      return;
-    }
-
-    const value = Number(answer.replace(",", "."));
-
-    if (!value || value <= 0) {
-      delete categoryLimits[category];
-    } else {
-      categoryLimits[category] = value;
-    }
-
-    saveCategoryLimits();
-    render();
-    return;
-  }
-
   const filterTarget = event.target.closest("[data-category-filter]");
 
   if (!filterTarget) {
@@ -480,9 +459,10 @@ function renderCardBreakdown(monthEntries, cards = getCreditCardTotals(monthEntr
     const item = document.createElement("div");
     item.className = `card-breakdown-item ${cardFilter === cardName ? "is-active" : ""}`;
     item.dataset.cardFilter = cardName;
+    item.style.setProperty("--card-accent", card.color || "#f2c15f");
     item.innerHTML = `
       <div class="card-breakdown-info">
-        <span>${escapeHtml(cardName)} · fecha ${card.closingDay} · vence ${card.dueDay}</span>
+        <span>${getCardVisualLabel(card)}</span>
         <strong>${currency.format(total)}</strong>
       </div>
       <div class="card-breakdown-actions">
@@ -530,31 +510,13 @@ function renderCategoryBreakdown(monthEntries) {
   }
 
   categories.forEach(([category, total]) => {
-    const limit = categoryLimits[category];
-    const percent = limit ? Math.min((total / limit) * 100, 100) : 0;
-    const unpaidCount = monthEntries.filter(
-      (entry) => entry.type !== "income" && (entry.category || "Sem categoria") === category && !entry.isPaid,
-    ).length;
-    const paidCount = monthEntries.filter(
-      (entry) => entry.type !== "income" && (entry.category || "Sem categoria") === category && entry.isPaid,
-    ).length;
     const item = document.createElement("div");
     item.className = `category-row ${categoryFilter === category ? "is-active" : ""}`;
     item.dataset.categoryFilter = category;
     item.innerHTML = `
-      <div class="category-row-info">
+      <div>
         <span>${escapeHtml(category)}</span>
-        <strong>${currency.format(total)}${limit ? ` de ${currency.format(limit)}` : ""}</strong>
-        <div class="mini-track"><div style="width: ${percent}%"></div></div>
-      </div>
-      <div class="category-row-actions">
-        <button class="tiny-button" type="button" data-pay-category="${escapeHtml(category)}" ${unpaidCount ? "" : "disabled"}>
-          ${unpaidCount ? `Pagar ${unpaidCount}` : "Tudo pago"}
-        </button>
-        <button class="tiny-button" type="button" data-unpay-category="${escapeHtml(category)}" ${paidCount ? "" : "disabled"}>
-          ${paidCount ? `Desfazer ${paidCount}` : "Nada pago"}
-        </button>
-        <button class="tiny-button" type="button" data-limit="${escapeHtml(category)}">${limit ? "Editar limite" : "Definir limite"}</button>
+        <strong>${currency.format(total)}</strong>
       </div>
     `;
 
@@ -580,7 +542,7 @@ function renderEntries(visibleEntries) {
       const dateLabel = entry.occurrenceDate ? formatDate(entry.occurrenceDate) : "Sem data";
       const category = entry.category || "Sem categoria";
       const repeatLabel = getRepeatLabel(entry);
-      const cardTag = entry.type === "credit" ? `<span class="entry-tag">${escapeHtml(entry.cardName || "Cartão não informado")}</span>` : "";
+      const cardTag = entry.type === "credit" ? getCardTag(entry.cardName) : "";
       const invoiceTag = entry.type === "credit" ? `<span class="entry-tag">${getInvoiceLabel(entry)}</span>` : "";
       const paidLabel = entry.type === "income" ? "" : `<span class="entry-tag ${entry.isPaid ? "paid-tag" : ""}">${entry.isPaid ? "Pago" : "Pendente"}</span>`;
 
@@ -615,23 +577,45 @@ function renderEntries(visibleEntries) {
 }
 
 function renderCardSettings() {
-  cardSettingsList.innerHTML = cardSettings
+  cardSettingsList.innerHTML = getSortedCardSettings()
     .map(
       (card) => `
         <div class="card-setting-row">
-          <label>
-            Nome
-            <input data-card-setting="name" data-card-id="${card.id}" type="text" value="${escapeHtml(card.name)}" />
+          <label class="card-setting-preview" style="--card-accent: ${escapeHtml(card.color)}" aria-label="Cor do cartão">
+            <span class="card-chip">${getCardBadgeLabel(card.name)}</span>
+            <input class="card-color-input" data-card-setting="color" data-card-id="${card.id}" type="color" value="${escapeHtml(card.color)}" aria-label="Cor do cartão" />
           </label>
-          <label>
-            Fecha
-            <input data-card-setting="closingDay" data-card-id="${card.id}" type="number" min="1" max="31" value="${card.closingDay}" />
-          </label>
-          <label>
-            Vence
-            <input data-card-setting="dueDay" data-card-id="${card.id}" type="number" min="1" max="31" value="${card.dueDay}" />
-          </label>
-          <button class="tiny-button" type="button" data-remove-card="${card.id}">Remover</button>
+          <div class="card-setting-main">
+            <input
+              class="card-name-input"
+              data-card-setting="name"
+              data-card-id="${card.id}"
+              type="text"
+              value="${escapeHtml(card.name)}"
+              placeholder="Nome do cartão"
+              aria-label="Nome do cartão"
+            />
+            <div class="card-setting-meta">
+              <label class="card-close-field">
+                <span>Fecha</span>
+                <input data-card-setting="closingDay" data-card-id="${card.id}" type="number" min="1" max="31" value="${card.closingDay}" />
+              </label>
+              <label class="card-due-field">
+                <span>Vence</span>
+                <input data-card-setting="dueDay" data-card-id="${card.id}" type="number" min="1" max="31" value="${card.dueDay}" />
+              </label>
+              <label class="toggle-label card-active-field">
+                <span>Ativo</span>
+                <input data-card-setting="active" data-card-id="${card.id}" type="checkbox" ${card.active ? "checked" : ""} />
+              </label>
+            </div>
+          </div>
+          <details class="card-actions-menu">
+            <summary class="tiny-button card-actions-trigger" aria-label="Ações do cartão">•••</summary>
+            <div class="card-actions-popover">
+              <button class="tiny-button danger-button" type="button" data-remove-card="${card.id}">Remover</button>
+            </div>
+          </details>
         </div>
       `,
     )
@@ -640,7 +624,14 @@ function renderCardSettings() {
 
 function renderDatalists() {
   const categories = [...new Set([...defaultCategories, ...entries.map((entry) => entry.category).filter(Boolean)])].sort();
-  const cards = [...new Set([...cardSettings.map((card) => card.name).filter(Boolean), ...entries.map((entry) => entry.cardName).filter(Boolean)])];
+  const activeCardNames = getSortedCardSettings()
+    .filter((card) => card.active)
+    .map((card) => card.name)
+    .filter(Boolean);
+  const unknownEntryCards = entries
+    .map((entry) => entry.cardName)
+    .filter((cardName) => cardName && !cardSettings.some((card) => card.name === cardName));
+  const cards = [...new Set([...activeCardNames, ...unknownEntryCards])];
 
   categoryOptions.innerHTML = categories.map((category) => `<option value="${escapeHtml(category)}"></option>`).join("");
   cardOptions.innerHTML = cards.map((card) => `<option value="${escapeHtml(card)}"></option>`).join("");
@@ -1013,6 +1004,43 @@ function getCardName(formData) {
   return formData.get("cardName").trim() || "Cartão não informado";
 }
 
+function getNextMonthAfterCardDue(entry) {
+  if (entry.type !== "credit") {
+    return "";
+  }
+
+  const referenceDate = getEntryReferenceDate(entry);
+
+  if (!referenceDate) {
+    return "";
+  }
+
+  const card = getCardConfig(entry.cardName);
+  const [year, month, day] = referenceDate.split("-").map(Number);
+  const referenceMonth = `${year}-${String(month).padStart(2, "0")}`;
+
+  if (day <= card.dueDay) {
+    return "";
+  }
+
+  return shiftMonth(referenceMonth, 1);
+}
+
+function getEntryReferenceDate(entry) {
+  if (entry.dueDate) {
+    return entry.dueDate;
+  }
+
+  if (monthInput.value !== getCurrentMonth()) {
+    return "";
+  }
+
+  const now = new Date();
+  const day = String(now.getDate()).padStart(2, "0");
+
+  return `${monthInput.value}-${day}`;
+}
+
 function togglePaidOccurrence(entry, paidKey) {
   const paidMonths = new Set(entry.paidMonths || []);
 
@@ -1043,24 +1071,6 @@ function markCardEntriesAsUnpaid(cardName) {
     shouldPay: false,
     entryFilter: (entry) => entry.type === "credit" && (entry.cardName || "Cartão não informado") === cardName,
     confirmLabel: `do cartão ${cardName}`,
-  });
-}
-
-function markCategoryEntriesAsPaid(category) {
-  setEntriesPaidState({
-    targetName: category,
-    shouldPay: true,
-    entryFilter: (entry) => entry.type !== "income" && (entry.category || "Sem categoria") === category,
-    confirmLabel: `da categoria ${category}`,
-  });
-}
-
-function markCategoryEntriesAsUnpaid(category) {
-  setEntriesPaidState({
-    targetName: category,
-    shouldPay: false,
-    entryFilter: (entry) => entry.type !== "income" && (entry.category || "Sem categoria") === category,
-    confirmLabel: `da categoria ${category}`,
   });
 }
 
@@ -1209,6 +1219,8 @@ function addNewCard() {
       name: `Novo cartão ${nextNumber}`,
       closingDay: 25,
       dueDay: 10,
+      color: cardColorPalette[(nextNumber - 1) % cardColorPalette.length],
+      active: true,
     },
   ];
   saveCardSettings();
@@ -1244,7 +1256,15 @@ function getCategoryTotals(monthEntries) {
 }
 
 function getCardConfig(cardName) {
-  return cardSettings.find((card) => card.name === cardName) || { name: cardName, closingDay: 25, dueDay: 10 };
+  return (
+    cardSettings.find((card) => card.name === cardName) || {
+      name: cardName,
+      closingDay: 25,
+      dueDay: 10,
+      color: "#b45309",
+      active: true,
+    }
+  );
 }
 
 function getInvoiceMonth(cardName, date) {
@@ -1510,6 +1530,8 @@ function normalizeCardSettings(savedCards) {
     name: getCardDisplayName(card.name, index),
     closingDay: clampDay(card.closingDay || 25),
     dueDay: clampDay(card.dueDay || 10),
+    color: normalizeCardColor(card.color, index),
+    active: card.active !== false,
   }));
 }
 
@@ -1525,6 +1547,64 @@ function getCardDisplayName(name, index) {
 
 function clampDay(value) {
   return Math.min(Math.max(Number(value) || 1, 1), 31);
+}
+
+function getCardSettingValue(cardSetting, input) {
+  if (cardSetting === "name") {
+    return input.value.trim();
+  }
+
+  if (cardSetting === "color") {
+    return normalizeCardColor(input.value);
+  }
+
+  if (cardSetting === "active") {
+    return input.checked;
+  }
+
+  return clampDay(input.value);
+}
+
+function normalizeCardColor(value, index = 0) {
+  if (/^#[0-9a-f]{6}$/i.test(String(value || "").trim())) {
+    return String(value).trim();
+  }
+
+  return cardColorPalette[index % cardColorPalette.length];
+}
+
+function getSortedCardSettings() {
+  return [...cardSettings].sort((a, b) => {
+    if (a.active !== b.active) {
+      return a.active ? -1 : 1;
+    }
+
+    return a.name.localeCompare(b.name, "pt-BR");
+  });
+}
+
+function getCardBadgeLabel(name) {
+  const initials = String(name || "Cartão")
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() || "")
+    .join("");
+
+  return initials || "CT";
+}
+
+function getCardVisualLabel(card) {
+  const status = card.active ? "" : " · inativo";
+
+  return `${escapeHtml(card.name)} · fecha ${card.closingDay} · vence ${card.dueDay}${status}`;
+}
+
+function getCardTag(cardName) {
+  const card = getCardConfig(cardName || "Cartão não informado");
+  const inactiveLabel = card.active ? "" : " · inativo";
+
+  return `<span class="entry-tag card-entry-tag" style="--card-accent: ${escapeHtml(card.color)}">${escapeHtml(card.name)}${inactiveLabel}</span>`;
 }
 
 function saveEntries() {
