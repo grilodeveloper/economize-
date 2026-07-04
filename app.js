@@ -88,6 +88,7 @@ let activeFilter = "all";
 let searchQuery = "";
 let editEntryId = null;
 let categoryFilter = "";
+let cardFilter = "";
 
 monthInput.value = getCurrentMonth();
 themeSelect.value = loadTheme();
@@ -277,6 +278,20 @@ cardSettingsList.addEventListener("click", (event) => {
 });
 
 categoryBreakdown.addEventListener("click", (event) => {
+  const payButton = event.target.closest("[data-pay-category]");
+
+  if (payButton) {
+    markCategoryEntriesAsPaid(payButton.dataset.payCategory);
+    return;
+  }
+
+  const unpayButton = event.target.closest("[data-unpay-category]");
+
+  if (unpayButton) {
+    markCategoryEntriesAsUnpaid(unpayButton.dataset.unpayCategory);
+    return;
+  }
+
   const button = event.target.closest("[data-limit]");
 
   if (button) {
@@ -308,6 +323,39 @@ categoryBreakdown.addEventListener("click", (event) => {
   }
 
   categoryFilter = categoryFilter === filterTarget.dataset.categoryFilter ? "" : filterTarget.dataset.categoryFilter;
+  render();
+});
+
+cardBreakdown.addEventListener("click", (event) => {
+  const unpayButton = event.target.closest("[data-unpay-card]");
+
+  if (unpayButton) {
+    markCardEntriesAsUnpaid(unpayButton.dataset.unpayCard);
+    return;
+  }
+
+  const payButton = event.target.closest("[data-pay-card]");
+
+  if (payButton) {
+    markCardEntriesAsPaid(payButton.dataset.payCard);
+    return;
+  }
+
+  const clearButton = event.target.closest("[data-clear-card-filter]");
+
+  if (clearButton) {
+    cardFilter = "";
+    render();
+    return;
+  }
+
+  const filterTarget = event.target.closest("[data-card-filter]");
+
+  if (!filterTarget) {
+    return;
+  }
+
+  cardFilter = cardFilter === filterTarget.dataset.cardFilter ? "" : filterTarget.dataset.cardFilter;
   render();
 });
 
@@ -343,6 +391,12 @@ function getEntryFromForm() {
 
 function render() {
   const monthEntries = getMonthEntries();
+  const cards = getCreditCardTotals(monthEntries);
+
+  if (cardFilter && !cards.some(([cardName]) => cardName === cardFilter)) {
+    cardFilter = "";
+  }
+
   const visibleEntries = getVisibleEntries(monthEntries);
   const income = sumByType(monthEntries, "income");
   const bills = sumByType(monthEntries, "bill");
@@ -365,7 +419,7 @@ function render() {
   entryCount.textContent = getEntryCountText(monthEntries.length, visibleEntries.length);
 
   renderDashboard(monthEntries);
-  renderCardBreakdown(monthEntries);
+  renderCardBreakdown(monthEntries, cards);
   renderCategoryBreakdown(monthEntries);
   renderEntries(visibleEntries);
 }
@@ -392,9 +446,8 @@ function renderDashboard(monthEntries) {
   `;
 }
 
-function renderCardBreakdown(monthEntries) {
+function renderCardBreakdown(monthEntries, cards = getCreditCardTotals(monthEntries)) {
   const creditEntries = monthEntries.filter((entry) => entry.type === "credit");
-  const cards = getCreditCardTotals(monthEntries);
 
   cardBreakdown.innerHTML = "";
 
@@ -407,17 +460,39 @@ function renderCardBreakdown(monthEntries) {
   cardBreakdown.innerHTML = `
     <div class="card-breakdown-title">
       <strong>Cartões do mês</strong>
-      <span>${creditEntries.length} lançamento${creditEntries.length === 1 ? "" : "s"}</span>
+      <span>${cardFilter ? `Filtro: ${escapeHtml(cardFilter)}` : `${creditEntries.length} lançamento${creditEntries.length === 1 ? "" : "s"}`}</span>
     </div>
   `;
 
+  if (cardFilter) {
+    const clear = document.createElement("button");
+    clear.className = "tiny-button";
+    clear.type = "button";
+    clear.textContent = "Limpar filtro de cartão";
+    clear.dataset.clearCardFilter = "true";
+    cardBreakdown.append(clear);
+  }
+
   cards.forEach(([cardName, total]) => {
     const card = getCardConfig(cardName);
+    const unpaidCount = creditEntries.filter((entry) => (entry.cardName || "Cartão não informado") === cardName && !entry.isPaid).length;
+    const paidCount = creditEntries.filter((entry) => (entry.cardName || "Cartão não informado") === cardName && entry.isPaid).length;
     const item = document.createElement("div");
-    item.className = "card-breakdown-item";
+    item.className = `card-breakdown-item ${cardFilter === cardName ? "is-active" : ""}`;
+    item.dataset.cardFilter = cardName;
     item.innerHTML = `
-      <span>${escapeHtml(cardName)} · fecha ${card.closingDay} · vence ${card.dueDay}</span>
-      <strong>${currency.format(total)}</strong>
+      <div class="card-breakdown-info">
+        <span>${escapeHtml(cardName)} · fecha ${card.closingDay} · vence ${card.dueDay}</span>
+        <strong>${currency.format(total)}</strong>
+      </div>
+      <div class="card-breakdown-actions">
+        <button class="tiny-button" type="button" data-pay-card="${escapeHtml(cardName)}" ${unpaidCount ? "" : "disabled"}>
+          ${unpaidCount ? `Pagar ${unpaidCount}` : "Tudo pago"}
+        </button>
+        <button class="tiny-button" type="button" data-unpay-card="${escapeHtml(cardName)}" ${paidCount ? "" : "disabled"}>
+          ${paidCount ? `Desfazer ${paidCount}` : "Nada pago"}
+        </button>
+      </div>
     `;
 
     cardBreakdown.append(item);
@@ -457,16 +532,30 @@ function renderCategoryBreakdown(monthEntries) {
   categories.forEach(([category, total]) => {
     const limit = categoryLimits[category];
     const percent = limit ? Math.min((total / limit) * 100, 100) : 0;
+    const unpaidCount = monthEntries.filter(
+      (entry) => entry.type !== "income" && (entry.category || "Sem categoria") === category && !entry.isPaid,
+    ).length;
+    const paidCount = monthEntries.filter(
+      (entry) => entry.type !== "income" && (entry.category || "Sem categoria") === category && entry.isPaid,
+    ).length;
     const item = document.createElement("div");
     item.className = `category-row ${categoryFilter === category ? "is-active" : ""}`;
     item.dataset.categoryFilter = category;
     item.innerHTML = `
-      <div>
+      <div class="category-row-info">
         <span>${escapeHtml(category)}</span>
         <strong>${currency.format(total)}${limit ? ` de ${currency.format(limit)}` : ""}</strong>
         <div class="mini-track"><div style="width: ${percent}%"></div></div>
       </div>
-      <button class="tiny-button" type="button" data-limit="${escapeHtml(category)}">${limit ? "Editar limite" : "Definir limite"}</button>
+      <div class="category-row-actions">
+        <button class="tiny-button" type="button" data-pay-category="${escapeHtml(category)}" ${unpaidCount ? "" : "disabled"}>
+          ${unpaidCount ? `Pagar ${unpaidCount}` : "Tudo pago"}
+        </button>
+        <button class="tiny-button" type="button" data-unpay-category="${escapeHtml(category)}" ${paidCount ? "" : "disabled"}>
+          ${paidCount ? `Desfazer ${paidCount}` : "Nada pago"}
+        </button>
+        <button class="tiny-button" type="button" data-limit="${escapeHtml(category)}">${limit ? "Editar limite" : "Definir limite"}</button>
+      </div>
     `;
 
     categoryBreakdown.append(item);
@@ -799,6 +888,10 @@ function getEntriesForMonth(month) {
 function getVisibleEntries(monthEntries) {
   let visibleEntries = activeFilter === "all" ? [...monthEntries] : monthEntries.filter((entry) => entry.type === activeFilter);
 
+  if (cardFilter) {
+    visibleEntries = visibleEntries.filter((entry) => (entry.cardName || "Cartão não informado") === cardFilter);
+  }
+
   if (categoryFilter) {
     visibleEntries = visibleEntries.filter((entry) => (entry.category || "Sem categoria") === categoryFilter);
   }
@@ -935,6 +1028,95 @@ function togglePaidOccurrence(entry, paidKey) {
   };
 }
 
+function markCardEntriesAsPaid(cardName) {
+  setEntriesPaidState({
+    targetName: cardName,
+    shouldPay: true,
+    entryFilter: (entry) => entry.type === "credit" && (entry.cardName || "Cartão não informado") === cardName,
+    confirmLabel: `do cartão ${cardName}`,
+  });
+}
+
+function markCardEntriesAsUnpaid(cardName) {
+  setEntriesPaidState({
+    targetName: cardName,
+    shouldPay: false,
+    entryFilter: (entry) => entry.type === "credit" && (entry.cardName || "Cartão não informado") === cardName,
+    confirmLabel: `do cartão ${cardName}`,
+  });
+}
+
+function markCategoryEntriesAsPaid(category) {
+  setEntriesPaidState({
+    targetName: category,
+    shouldPay: true,
+    entryFilter: (entry) => entry.type !== "income" && (entry.category || "Sem categoria") === category,
+    confirmLabel: `da categoria ${category}`,
+  });
+}
+
+function markCategoryEntriesAsUnpaid(category) {
+  setEntriesPaidState({
+    targetName: category,
+    shouldPay: false,
+    entryFilter: (entry) => entry.type !== "income" && (entry.category || "Sem categoria") === category,
+    confirmLabel: `da categoria ${category}`,
+  });
+}
+
+function setEntriesPaidState({ targetName, shouldPay, entryFilter, confirmLabel }) {
+  if (!targetName) {
+    return;
+  }
+
+  const monthEntries = getMonthEntries();
+  const targetEntries = monthEntries.filter((entry) => entryFilter(entry) && entry.isPaid !== shouldPay);
+
+  if (!targetEntries.length) {
+    return;
+  }
+
+  const actionLabel = shouldPay ? "marcar como pagos" : "desfazer o pagamento de";
+  const confirmed = confirm(
+    `Deseja ${actionLabel} ${targetEntries.length} lançamento${targetEntries.length === 1 ? "" : "s"} ${confirmLabel}?`,
+  );
+
+  if (!confirmed) {
+    return;
+  }
+
+  const paidKeysByEntry = targetEntries.reduce((map, entry) => {
+    map[entry.id] = [...(map[entry.id] || []), entry.paidKey];
+    return map;
+  }, {});
+
+  entries = entries.map((entry) => {
+    const paidKeys = paidKeysByEntry[entry.id];
+
+    if (!paidKeys?.length) {
+      return entry;
+    }
+
+    const paidMonths = new Set(entry.paidMonths || []);
+
+    paidKeys.forEach((paidKey) => {
+      if (shouldPay) {
+        paidMonths.add(paidKey);
+      } else {
+        paidMonths.delete(paidKey);
+      }
+    });
+
+    return {
+      ...entry,
+      paidMonths: [...paidMonths],
+    };
+  });
+
+  saveEntries();
+  render();
+}
+
 function isEntryPaid(entry, paidKey) {
   const legacyMonth = paidKey.split("::")[0];
 
@@ -1010,6 +1192,7 @@ function resetForm() {
 
 function clearListFilters() {
   activeFilter = "all";
+  cardFilter = "";
   categoryFilter = "";
   searchQuery = "";
   searchInput.value = "";

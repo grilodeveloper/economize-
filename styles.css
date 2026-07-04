@@ -497,11 +497,41 @@ h2 {
 .card-breakdown-item {
   color: var(--muted);
   font-size: 0.9rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  border-radius: 8px;
+  cursor: pointer;
+  padding: 6px;
+  margin: -6px;
+}
+
+.card-breakdown-info {
+  min-width: 0;
+}
+
+.card-breakdown-info span,
+.card-breakdown-info strong {
+  display: block;
+}
+
+.card-breakdown-actions {
+  display: grid;
+  gap: 6px;
+}
+
+.card-breakdown-item.is-active {
+  background: var(--green-soft);
 }
 
 .card-breakdown-item strong {
   color: var(--yellow);
   white-space: nowrap;
+}
+
+.tiny-button:disabled {
+  cursor: default;
+  opacity: 0.6;
 }
 
 .category-row {
@@ -513,6 +543,15 @@ h2 {
   cursor: pointer;
   padding: 6px;
   margin: -6px;
+}
+
+.category-row-info {
+  min-width: 0;
+}
+
+.category-row-actions {
+  display: grid;
+  gap: 6px;
 }
 
 .category-row.is-active {
