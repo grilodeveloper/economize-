@@ -66,6 +66,7 @@ const totalIncome = document.querySelector("#totalIncome");
 const totalExpenses = document.querySelector("#totalExpenses");
 const creditTotal = document.querySelector("#creditTotal");
 const balance = document.querySelector("#balance");
+const balanceCard = document.querySelector(".summary-card.balance");
 const spentPercent = document.querySelector("#spentPercent");
 const availableText = document.querySelector("#availableText");
 const progressBar = document.querySelector("#progressBar");
@@ -111,12 +112,17 @@ async function initApp() {
   applyTheme(themeSelect.value);
   syncInstallmentsField();
   syncCardField();
+  categoryLimits = loadCategoryLimits();
+
+  entryList.setAttribute("aria-busy", "true");
+  entryList.innerHTML = `<li class="loading-state">Carregando seus lançamentos...</li>`;
 
   const [loadedEntries, loadedCards] = await Promise.all([dbLoadEntries(), dbLoadCards()]);
 
   entries = normalizeEntries(loadedEntries);
   cardSettings = normalizeCardSettings(loadedCards.length ? loadedCards : defaultCards);
 
+  entryList.removeAttribute("aria-busy");
   renderCardSettings();
   renderDatalists();
   render();
@@ -326,6 +332,13 @@ cardSettingsList.addEventListener("click", async (event) => {
 });
 
 categoryBreakdown.addEventListener("click", (event) => {
+  const limitButton = event.target.closest("[data-set-limit]");
+
+  if (limitButton) {
+    handleSetCategoryLimit(limitButton.dataset.setLimit);
+    return;
+  }
+
   const filterTarget = event.target.closest("[data-category-filter]");
 
   if (!filterTarget) {
@@ -428,6 +441,8 @@ function render() {
   totalExpenses.textContent = currency.format(totalSpent);
   creditTotal.textContent = currency.format(credit);
   balance.textContent = currency.format(monthBalance);
+  balanceCard.classList.toggle("is-negative", monthBalance < 0);
+  balanceCard.classList.toggle("is-positive", monthBalance >= 0);
   spentPercent.textContent = `${Math.round(percent)}% usado`;
   availableText.textContent = `${currency.format(paidTotal)} pago · ${currency.format(pendingTotal)} pendente`;
   progressBar.style.width = `${percent}%`;
@@ -551,19 +566,64 @@ function renderCategoryBreakdown(monthEntries) {
     categoryBreakdown.append(clear);
   }
 
+  const maxTotal = categories[0]?.[1] || 1;
+
   categories.forEach(([category, total]) => {
+    const limit = categoryLimits[category];
+    const hasLimit = typeof limit === "number" && limit > 0;
+    const overLimit = hasLimit && total > limit;
+    const percent = hasLimit
+      ? Math.min(Math.round((total / limit) * 100), 100)
+      : Math.round((total / maxTotal) * 100);
+    const level = overLimit ? "high" : percent >= 75 ? "mid" : "low";
     const item = document.createElement("div");
     item.className = `category-row ${categoryFilter === category ? "is-active" : ""}`;
     item.dataset.categoryFilter = category;
     item.innerHTML = `
-      <div>
+      <div class="category-row-header">
         <span>${escapeHtml(category)}</span>
-        <strong>${currency.format(total)}</strong>
+        <div class="category-row-value">
+          ${overLimit ? `<span class="entry-tag category-over-tag">Estourou o limite</span>` : ""}
+          <strong>${currency.format(total)}${hasLimit ? `<span class="category-limit-text"> / ${currency.format(limit)}</span>` : ""}</strong>
+          <button class="tiny-button" type="button" data-set-limit="${escapeHtml(category)}">${hasLimit ? "Editar limite" : "Definir limite"}</button>
+        </div>
+      </div>
+      <div class="category-bar-track">
+        <div class="category-bar-fill category-bar-fill--${level}" style="width: ${percent}%"></div>
       </div>
     `;
-
     categoryBreakdown.append(item);
   });
+}
+
+function handleSetCategoryLimit(category) {
+  const current = categoryLimits[category];
+  const input = prompt(
+    `Limite mensal para "${category}" (em R$, deixe vazio para remover):`,
+    current ? String(current) : "",
+  );
+
+  if (input === null) {
+    return;
+  }
+
+  const trimmed = input.trim();
+
+  if (!trimmed) {
+    delete categoryLimits[category];
+  } else {
+    const value = Number(trimmed.replace(",", "."));
+
+    if (!Number.isFinite(value) || value <= 0) {
+      alert("Informe um valor numérico maior que zero.");
+      return;
+    }
+
+    categoryLimits[category] = value;
+  }
+
+  saveCategoryLimits();
+  render();
 }
 
 function renderEntries(visibleEntries) {
@@ -574,54 +634,64 @@ function renderEntries(visibleEntries) {
     return;
   }
 
-  visibleEntries
-    .sort((a, b) =>
-      (a.occurrenceDate || "9999-12-31").localeCompare(b.occurrenceDate || "9999-12-31"),
-    )
-    .forEach((entry) => {
-      const item = document.createElement("li");
-      item.className = `entry-item ${entry.isPaid ? "is-paid" : ""}`;
+  const sortedEntries = [...visibleEntries].sort((a, b) =>
+    (a.occurrenceDate || "9999-12-31").localeCompare(b.occurrenceDate || "9999-12-31"),
+  );
 
-      const signal = entry.type === "income" ? "+" : "-";
-      const dateLabel = entry.occurrenceDate ? formatDate(entry.occurrenceDate) : "Sem data";
-      const category = entry.category || "Sem categoria";
-      const repeatLabel = getRepeatLabel(entry);
-      const cardTag = entry.type === "credit" ? getCardTag(entry.cardName) : "";
-      const invoiceTag =
-        entry.type === "credit" ? `<span class="entry-tag">${getInvoiceLabel(entry)}</span>` : "";
-      const paidLabel =
-        entry.type === "income"
-          ? ""
-          : `<span class="entry-tag ${entry.isPaid ? "paid-tag" : ""}">${entry.isPaid ? "Pago" : "Pendente"}</span>`;
+  let lastDateKey = null;
 
-      item.innerHTML = `
-        <div class="entry-main">
+  sortedEntries.forEach((entry) => {
+    const dateKey = entry.occurrenceDate || "sem-data";
+
+    if (dateKey !== lastDateKey) {
+      lastDateKey = dateKey;
+      const dateGroup = document.createElement("li");
+      dateGroup.className = "entry-date-group";
+      dateGroup.textContent = entry.occurrenceDate ? formatDate(entry.occurrenceDate) : "Sem data";
+      entryList.append(dateGroup);
+    }
+
+    const item = document.createElement("li");
+    item.className = `entry-item ${entry.isPaid ? "is-paid" : ""}`;
+
+    const signal = entry.type === "income" ? "+" : "-";
+    const category = entry.category || "Sem categoria";
+    const repeatLabel = getRepeatLabel(entry);
+    const cardTag = entry.type === "credit" ? getCardTag(entry.cardName) : "";
+    const invoiceTag =
+      entry.type === "credit" ? `<span class="entry-tag">${getInvoiceLabel(entry)}</span>` : "";
+    const paidLabel =
+      entry.type === "income"
+        ? ""
+        : `<span class="entry-tag ${entry.isPaid ? "paid-tag" : ""}">${entry.isPaid ? "Pago" : "Pendente"}</span>`;
+
+    item.innerHTML = `
+      <div class="entry-main">
+        <div class="entry-title-row">
           <strong>${escapeHtml(entry.description)}</strong>
-          <div class="entry-meta">
-            <span class="entry-tag">${typeLabels[entry.type]}</span>
-            ${paidLabel}
-            ${cardTag}
-            ${invoiceTag}
-            <span class="entry-tag">${repeatLabel}</span>
-            <span class="entry-tag">${escapeHtml(category)}</span>
-            <span class="entry-tag">${dateLabel}</span>
-          </div>
+          <span class="entry-value entry-value--${entry.type}">${signal} ${currency.format(entry.amount)}</span>
         </div>
-        <span class="entry-value">${signal} ${currency.format(entry.amount)}</span>
-        <div class="entry-actions">
-          ${
-            entry.type === "income"
-              ? ""
-              : `<button class="action-button" type="button" data-action="paid" data-id="${entry.id}" data-paid-key="${entry.paidKey}">${entry.isPaid ? "Desfazer" : "Pagar"}</button>`
-          }
-          <button class="action-button" type="button" data-action="edit" data-id="${entry.id}">Editar</button>
-          <button class="action-button" type="button" data-action="duplicate" data-id="${entry.id}">Duplicar</button>
-          <button class="delete-button" type="button" data-action="delete" data-id="${entry.id}" aria-label="Remover lançamento">×</button>
+        <div class="entry-meta">
+          <span class="entry-tag">${typeLabels[entry.type]}</span>
+          ${paidLabel}
+          ${cardTag}
+          ${invoiceTag}
+          <span class="entry-tag">${repeatLabel}</span>
+          ${escapeHtml(category) !== "Sem categoria" ? `<span class="entry-tag">${escapeHtml(category)}</span>` : ""}
         </div>
-      `;
+      </div>
+      <div class="entry-actions">
+        <div class="entry-actions-main">
+          ${entry.type === "income" ? "" : `<button class="action-button" type="button" data-action="paid" data-id="${entry.id}" data-paid-key="${entry.paidKey}" aria-label="${entry.isPaid ? "Desfazer pagamento" : "Marcar como pago"}" title="${entry.isPaid ? "Desfazer pagamento" : "Marcar como pago"}">${entry.isPaid ? "↺" : "✓"}</button>`}
+          <button class="action-button" type="button" data-action="edit" data-id="${entry.id}" aria-label="Editar lançamento" title="Editar">✎</button>
+          <button class="action-button" type="button" data-action="duplicate" data-id="${entry.id}" aria-label="Duplicar lançamento" title="Duplicar">⧉</button>
+        </div>
+        <button class="delete-button" type="button" data-action="delete" data-id="${entry.id}" aria-label="Remover lançamento" title="Remover">×</button>
+      </div>
+    `;
 
-      entryList.append(item);
-    });
+    entryList.append(item);
+  });
 }
 
 function renderCardSettings() {
@@ -1510,6 +1580,15 @@ async function saveCardSettings(modifiedCards = []) {
 
 function saveCategoryLimits() {
   localStorage.setItem(CATEGORY_LIMITS_KEY, JSON.stringify(categoryLimits));
+}
+
+function loadCategoryLimits() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(CATEGORY_LIMITS_KEY) || "{}");
+    return saved && typeof saved === "object" ? saved : {};
+  } catch {
+    return {};
+  }
 }
 
 function loadTheme() {
