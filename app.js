@@ -33,10 +33,25 @@ const defaultCategories = [
 const defaultCards = [
   { id: "card-1", name: "Nubank", closingDay: 25, dueDay: 5, color: "#7c3aed", active: true },
   { id: "card-2", name: "Nu Empresas", closingDay: 25, dueDay: 10, color: "#0f766e", active: true },
-  { id: "card-3", name: "Mercado Pago", closingDay: 25, dueDay: 15, color: "#2563eb", active: true },
+  {
+    id: "card-3",
+    name: "Mercado Pago",
+    closingDay: 25,
+    dueDay: 15,
+    color: "#2563eb",
+    active: true,
+  },
 ];
 
-const cardColorPalette = ["#7c3aed", "#0f766e", "#2563eb", "#b45309", "#be123c", "#1d4ed8", "#15803d"];
+const cardColorPalette = [
+  "#7c3aed",
+  "#0f766e",
+  "#2563eb",
+  "#b45309",
+  "#be123c",
+  "#1d4ed8",
+  "#15803d",
+];
 
 const currency = new Intl.NumberFormat("pt-BR", {
   style: "currency",
@@ -83,25 +98,35 @@ const categoryOptions = document.querySelector("#categoryOptions");
 const cardOptions = document.querySelector("#cardOptions");
 const addCard = document.querySelector("#addCard");
 
-let entries = normalizeEntries(loadEntries());
-let cardSettings = normalizeCardSettings(loadJson(CARD_SETTINGS_KEY, defaultCards));
-let categoryLimits = loadJson(CATEGORY_LIMITS_KEY, {});
+let entries = [];
+let cardSettings = [];
+let categoryLimits = {};
 let activeFilter = "all";
 let searchQuery = "";
 let editEntryId = null;
 let categoryFilter = "";
 let cardFilter = "";
 
-monthInput.value = getCurrentMonth();
-themeSelect.value = loadTheme();
-applyTheme(themeSelect.value);
-syncInstallmentsField();
-syncCardField();
-renderCardSettings();
-renderDatalists();
-render();
+async function initApp() {
+  monthInput.value = getCurrentMonth();
+  themeSelect.value = loadTheme();
+  applyTheme(themeSelect.value);
+  syncInstallmentsField();
+  syncCardField();
 
-form.addEventListener("submit", (event) => {
+  const [loadedEntries, loadedCards] = await Promise.all([dbLoadEntries(), dbLoadCards()]);
+
+  entries = normalizeEntries(loadedEntries);
+  cardSettings = normalizeCardSettings(loadedCards.length ? loadedCards : defaultCards);
+
+  renderCardSettings();
+  renderDatalists();
+  render();
+}
+
+initApp();
+
+form.addEventListener("submit", async (event) => {
   event.preventDefault();
 
   const entry = getEntryFromForm();
@@ -140,7 +165,8 @@ form.addEventListener("submit", (event) => {
     });
   }
 
-  saveEntries();
+  const entryToSave = entries.find((e) => e.id === (editEntryId || entries[entries.length - 1].id));
+  await dbSaveEntry(entryToSave);
   renderDatalists();
 
   if (!isEditing) {
@@ -188,14 +214,18 @@ systemTheme.addEventListener("change", () => {
   }
 });
 
-clearMonth.addEventListener("click", () => {
-  const removableEntries = entries.filter((entry) => entry.repeat === "once" && entry.startMonth === monthInput.value);
+clearMonth.addEventListener("click", async () => {
+  const removableEntries = entries.filter(
+    (entry) => entry.repeat === "once" && entry.startMonth === monthInput.value,
+  );
 
   if (!removableEntries.length) {
     return;
   }
 
-  const confirmed = confirm("Apagar os lançamentos únicos deste mês? Contas fixas e parceladas serão mantidas.");
+  const confirmed = confirm(
+    "Apagar os lançamentos únicos deste mês? Contas fixas e parceladas serão mantidas.",
+  );
 
   if (!confirmed) {
     return;
@@ -203,7 +233,7 @@ clearMonth.addEventListener("click", () => {
 
   const removableIds = removableEntries.map((entry) => entry.id);
   entries = entries.filter((entry) => !removableIds.includes(entry.id));
-  saveEntries();
+  await Promise.all(removableIds.map((id) => dbDeleteEntry(id)));
   render();
 });
 
@@ -215,7 +245,7 @@ filterButtons.forEach((button) => {
   });
 });
 
-entryList.addEventListener("click", (event) => {
+entryList.addEventListener("click", async (event) => {
   const action = event.target.closest("[data-action]");
 
   if (!action) {
@@ -226,10 +256,15 @@ entryList.addEventListener("click", (event) => {
 
   if (actionName === "delete") {
     entries = entries.filter((entry) => entry.id !== id);
+    await dbDeleteEntry(id);
   }
 
   if (actionName === "paid") {
-    entries = entries.map((entry) => (entry.id === id ? togglePaidOccurrence(entry, paidKey) : entry));
+    entries = entries.map((entry) =>
+      entry.id === id ? togglePaidOccurrence(entry, paidKey) : entry,
+    );
+    const updated = entries.find((e) => e.id === id);
+    await dbSaveEntry(updated);
   }
 
   if (actionName === "edit") {
@@ -238,14 +273,13 @@ entryList.addEventListener("click", (event) => {
   }
 
   if (actionName === "duplicate") {
-    duplicateEntry(id);
+    await duplicateEntry(id);
   }
 
-  saveEntries();
   render();
 });
 
-cardSettingsList.addEventListener("input", (event) => {
+cardSettingsList.addEventListener("input", async (event) => {
   const input = event.target.closest("[data-card-setting]");
 
   if (!input) {
@@ -261,13 +295,14 @@ cardSettingsList.addEventListener("input", (event) => {
         }
       : card,
   );
-  saveCardSettings();
+  const updatedCard = cardSettings.find((c) => c.id === cardId);
+  await dbSaveCard(updatedCard);
   renderCardSettings();
   renderDatalists();
   render();
 });
 
-cardSettingsList.addEventListener("click", (event) => {
+cardSettingsList.addEventListener("click", async (event) => {
   const button = event.target.closest("[data-remove-card]");
 
   if (!button) {
@@ -288,7 +323,7 @@ cardSettingsList.addEventListener("click", (event) => {
   }
 
   cardSettings = cardSettings.filter((item) => item.id !== card.id);
-  saveCardSettings();
+  await dbDeleteCard(card.id);
   renderCardSettings();
   renderDatalists();
   render();
@@ -301,7 +336,10 @@ categoryBreakdown.addEventListener("click", (event) => {
     return;
   }
 
-  categoryFilter = categoryFilter === filterTarget.dataset.categoryFilter ? "" : filterTarget.dataset.categoryFilter;
+  categoryFilter =
+    categoryFilter === filterTarget.dataset.categoryFilter
+      ? ""
+      : filterTarget.dataset.categoryFilter;
   render();
 });
 
@@ -334,7 +372,8 @@ cardBreakdown.addEventListener("click", (event) => {
     return;
   }
 
-  cardFilter = cardFilter === filterTarget.dataset.cardFilter ? "" : filterTarget.dataset.cardFilter;
+  cardFilter =
+    cardFilter === filterTarget.dataset.cardFilter ? "" : filterTarget.dataset.cardFilter;
   render();
 });
 
@@ -382,7 +421,9 @@ function render() {
   const expenses = sumByType(monthEntries, "expense");
   const credit = sumByType(monthEntries, "credit");
   const totalSpent = bills + expenses + credit;
-  const paidTotal = monthEntries.filter((entry) => entry.type !== "income" && entry.isPaid).reduce((total, entry) => total + Number(entry.amount), 0);
+  const paidTotal = monthEntries
+    .filter((entry) => entry.type !== "income" && entry.isPaid)
+    .reduce((total, entry) => total + Number(entry.amount), 0);
   const pendingTotal = Math.max(totalSpent - paidTotal, 0);
   const monthBalance = income - totalSpent;
   const percent = income > 0 ? Math.min((totalSpent / income) * 100, 100) : 0;
@@ -394,7 +435,8 @@ function render() {
   spentPercent.textContent = `${Math.round(percent)}% usado`;
   availableText.textContent = `${currency.format(paidTotal)} pago · ${currency.format(pendingTotal)} pendente`;
   progressBar.style.width = `${percent}%`;
-  progressBar.style.background = percent > 85 ? "var(--red)" : percent > 65 ? "var(--yellow)" : "var(--green)";
+  progressBar.style.background =
+    percent > 85 ? "var(--red)" : percent > 65 ? "var(--yellow)" : "var(--green)";
   entryCount.textContent = getEntryCountText(monthEntries.length, visibleEntries.length);
 
   renderDashboard(monthEntries);
@@ -454,8 +496,12 @@ function renderCardBreakdown(monthEntries, cards = getCreditCardTotals(monthEntr
 
   cards.forEach(([cardName, total]) => {
     const card = getCardConfig(cardName);
-    const unpaidCount = creditEntries.filter((entry) => (entry.cardName || "Cartão não informado") === cardName && !entry.isPaid).length;
-    const paidCount = creditEntries.filter((entry) => (entry.cardName || "Cartão não informado") === cardName && entry.isPaid).length;
+    const unpaidCount = creditEntries.filter(
+      (entry) => (entry.cardName || "Cartão não informado") === cardName && !entry.isPaid,
+    ).length;
+    const paidCount = creditEntries.filter(
+      (entry) => (entry.cardName || "Cartão não informado") === cardName && entry.isPaid,
+    ).length;
     const item = document.createElement("div");
     item.className = `card-breakdown-item ${cardFilter === cardName ? "is-active" : ""}`;
     item.dataset.cardFilter = cardName;
@@ -533,7 +579,9 @@ function renderEntries(visibleEntries) {
   }
 
   visibleEntries
-    .sort((a, b) => (a.occurrenceDate || "9999-12-31").localeCompare(b.occurrenceDate || "9999-12-31"))
+    .sort((a, b) =>
+      (a.occurrenceDate || "9999-12-31").localeCompare(b.occurrenceDate || "9999-12-31"),
+    )
     .forEach((entry) => {
       const item = document.createElement("li");
       item.className = `entry-item ${entry.isPaid ? "is-paid" : ""}`;
@@ -543,8 +591,12 @@ function renderEntries(visibleEntries) {
       const category = entry.category || "Sem categoria";
       const repeatLabel = getRepeatLabel(entry);
       const cardTag = entry.type === "credit" ? getCardTag(entry.cardName) : "";
-      const invoiceTag = entry.type === "credit" ? `<span class="entry-tag">${getInvoiceLabel(entry)}</span>` : "";
-      const paidLabel = entry.type === "income" ? "" : `<span class="entry-tag ${entry.isPaid ? "paid-tag" : ""}">${entry.isPaid ? "Pago" : "Pendente"}</span>`;
+      const invoiceTag =
+        entry.type === "credit" ? `<span class="entry-tag">${getInvoiceLabel(entry)}</span>` : "";
+      const paidLabel =
+        entry.type === "income"
+          ? ""
+          : `<span class="entry-tag ${entry.isPaid ? "paid-tag" : ""}">${entry.isPaid ? "Pago" : "Pendente"}</span>`;
 
       item.innerHTML = `
         <div class="entry-main">
@@ -623,7 +675,9 @@ function renderCardSettings() {
 }
 
 function renderDatalists() {
-  const categories = [...new Set([...defaultCategories, ...entries.map((entry) => entry.category).filter(Boolean)])].sort();
+  const categories = [
+    ...new Set([...defaultCategories, ...entries.map((entry) => entry.category).filter(Boolean)]),
+  ].sort();
   const activeCardNames = getSortedCardSettings()
     .filter((card) => card.active)
     .map((card) => card.name)
@@ -633,8 +687,12 @@ function renderDatalists() {
     .filter((cardName) => cardName && !cardSettings.some((card) => card.name === cardName));
   const cards = [...new Set([...activeCardNames, ...unknownEntryCards])];
 
-  categoryOptions.innerHTML = categories.map((category) => `<option value="${escapeHtml(category)}"></option>`).join("");
-  cardOptions.innerHTML = cards.map((card) => `<option value="${escapeHtml(card)}"></option>`).join("");
+  categoryOptions.innerHTML = categories
+    .map((category) => `<option value="${escapeHtml(category)}"></option>`)
+    .join("");
+  cardOptions.innerHTML = cards
+    .map((card) => `<option value="${escapeHtml(card)}"></option>`)
+    .join("");
 }
 
 function downloadBackup() {
@@ -681,13 +739,23 @@ function getPdfReportHtml(monthEntries) {
   const monthBalance = income - totalSpent;
   const creditCards = getCreditCardTotals(monthEntries);
   const categoryRows = getCategoryTotals(monthEntries)
-    .map(([category, total]) => `<li><span>${escapeHtml(category)}</span><strong>${currency.format(total)}</strong></li>`)
+    .map(
+      ([category, total]) =>
+        `<li><span>${escapeHtml(category)}</span><strong>${currency.format(total)}</strong></li>`,
+    )
     .join("");
   const rows = [...monthEntries]
-    .sort((a, b) => (a.occurrenceDate || "9999-12-31").localeCompare(b.occurrenceDate || "9999-12-31"))
+    .sort((a, b) =>
+      (a.occurrenceDate || "9999-12-31").localeCompare(b.occurrenceDate || "9999-12-31"),
+    )
     .map(getPdfEntryRow)
     .join("");
-  const cardRows = creditCards.map(([cardName, total]) => `<li><span>${escapeHtml(cardName)}</span><strong>${currency.format(total)}</strong></li>`).join("");
+  const cardRows = creditCards
+    .map(
+      ([cardName, total]) =>
+        `<li><span>${escapeHtml(cardName)}</span><strong>${currency.format(total)}</strong></li>`,
+    )
+    .join("");
 
   return `
     <!doctype html>
@@ -805,11 +873,13 @@ function importBackupFile(event) {
 
   const reader = new FileReader();
 
-  reader.addEventListener("load", () => {
+  reader.addEventListener("load", async () => {
     try {
       const backup = JSON.parse(reader.result);
       const importedEntries = getEntriesFromBackup(backup);
-      const confirmed = confirm("Importar este backup vai substituir os dados salvos neste navegador. Continuar?");
+      const confirmed = confirm(
+        "Importar este backup vai substituir os dados salvos neste navegador. Continuar?",
+      );
 
       if (!confirmed) {
         return;
@@ -818,15 +888,16 @@ function importBackupFile(event) {
       entries = normalizeEntries(importedEntries);
       cardSettings = normalizeCardSettings(backup.cardSettings || cardSettings);
       categoryLimits = backup.categoryLimits || categoryLimits;
-      saveEntries();
-      saveCardSettings();
-      saveCategoryLimits();
+      await Promise.all(entries.map((entry) => dbSaveEntry(entry)));
+      await Promise.all(cardSettings.map((card) => dbSaveCard(card)));
       renderCardSettings();
       renderDatalists();
       render();
       alert("Backup importado com sucesso.");
     } catch {
-      alert("Não consegui importar esse arquivo. Verifique se ele é um backup válido do Economize!.");
+      alert(
+        "Não consegui importar esse arquivo. Verifique se ele é um backup válido do Economize!.",
+      );
     } finally {
       importBackup.value = "";
     }
@@ -844,7 +915,7 @@ function importCsvFile(event) {
 
   const reader = new FileReader();
 
-  reader.addEventListener("load", () => {
+  reader.addEventListener("load", async () => {
     try {
       const importedEntries = parseCsvEntries(reader.result);
 
@@ -854,12 +925,14 @@ function importCsvFile(event) {
       }
 
       entries = [...entries, ...importedEntries];
-      saveEntries();
+      await Promise.all(importedEntries.map((entry) => dbSaveEntry(entry)));
       renderDatalists();
       render();
       alert(`${importedEntries.length} lançamento(s) importado(s).`);
     } catch {
-      alert("Não consegui importar esse CSV. Use colunas como descrição, valor, tipo, categoria, data e cartão.");
+      alert(
+        "Não consegui importar esse CSV. Use colunas como descrição, valor, tipo, categoria, data e cartão.",
+      );
     } finally {
       importCsv.value = "";
     }
@@ -877,19 +950,32 @@ function getEntriesForMonth(month) {
 }
 
 function getVisibleEntries(monthEntries) {
-  let visibleEntries = activeFilter === "all" ? [...monthEntries] : monthEntries.filter((entry) => entry.type === activeFilter);
+  let visibleEntries =
+    activeFilter === "all"
+      ? [...monthEntries]
+      : monthEntries.filter((entry) => entry.type === activeFilter);
 
   if (cardFilter) {
-    visibleEntries = visibleEntries.filter((entry) => (entry.cardName || "Cartão não informado") === cardFilter);
+    visibleEntries = visibleEntries.filter(
+      (entry) => (entry.cardName || "Cartão não informado") === cardFilter,
+    );
   }
 
   if (categoryFilter) {
-    visibleEntries = visibleEntries.filter((entry) => (entry.category || "Sem categoria") === categoryFilter);
+    visibleEntries = visibleEntries.filter(
+      (entry) => (entry.category || "Sem categoria") === categoryFilter,
+    );
   }
 
   if (searchQuery) {
     visibleEntries = visibleEntries.filter((entry) =>
-      [entry.description, entry.category, entry.cardName, typeLabels[entry.type], getRepeatLabel(entry)]
+      [
+        entry.description,
+        entry.category,
+        entry.cardName,
+        typeLabels[entry.type],
+        getRepeatLabel(entry),
+      ]
         .filter(Boolean)
         .some((value) => value.toLowerCase().includes(searchQuery)),
     );
@@ -905,7 +991,11 @@ function sumByType(monthEntries, type) {
 }
 
 function getTotalSpent(monthEntries) {
-  return sumByType(monthEntries, "bill") + sumByType(monthEntries, "expense") + sumByType(monthEntries, "credit");
+  return (
+    sumByType(monthEntries, "bill") +
+    sumByType(monthEntries, "expense") +
+    sumByType(monthEntries, "credit")
+  );
 }
 
 function getOccurrenceForMonth(entry, selectedMonth) {
@@ -937,7 +1027,10 @@ function getOccurrenceForMonth(entry, selectedMonth) {
       installmentNumber,
       paidKey,
       isPaid: isEntryPaid(entry, paidKey),
-      invoiceMonth: entry.type === "credit" ? getInvoiceMonth(entry.cardName, occurrenceDate || `${selectedMonth}-01`) : "",
+      invoiceMonth:
+        entry.type === "credit"
+          ? getInvoiceMonth(entry.cardName, occurrenceDate || `${selectedMonth}-01`)
+          : "",
     },
   ];
 }
@@ -1060,7 +1153,8 @@ function markCardEntriesAsPaid(cardName) {
   setEntriesPaidState({
     targetName: cardName,
     shouldPay: true,
-    entryFilter: (entry) => entry.type === "credit" && (entry.cardName || "Cartão não informado") === cardName,
+    entryFilter: (entry) =>
+      entry.type === "credit" && (entry.cardName || "Cartão não informado") === cardName,
     confirmLabel: `do cartão ${cardName}`,
   });
 }
@@ -1069,18 +1163,21 @@ function markCardEntriesAsUnpaid(cardName) {
   setEntriesPaidState({
     targetName: cardName,
     shouldPay: false,
-    entryFilter: (entry) => entry.type === "credit" && (entry.cardName || "Cartão não informado") === cardName,
+    entryFilter: (entry) =>
+      entry.type === "credit" && (entry.cardName || "Cartão não informado") === cardName,
     confirmLabel: `do cartão ${cardName}`,
   });
 }
 
-function setEntriesPaidState({ targetName, shouldPay, entryFilter, confirmLabel }) {
+async function setEntriesPaidState({ targetName, shouldPay, entryFilter, confirmLabel }) {
   if (!targetName) {
     return;
   }
 
   const monthEntries = getMonthEntries();
-  const targetEntries = monthEntries.filter((entry) => entryFilter(entry) && entry.isPaid !== shouldPay);
+  const targetEntries = monthEntries.filter(
+    (entry) => entryFilter(entry) && entry.isPaid !== shouldPay,
+  );
 
   if (!targetEntries.length) {
     return;
@@ -1123,14 +1220,18 @@ function setEntriesPaidState({ targetName, shouldPay, entryFilter, confirmLabel 
     };
   });
 
-  saveEntries();
+  const modifiedIds = Object.keys(paidKeysByEntry);
+  const modifiedEntries = entries.filter((e) => modifiedIds.includes(e.id));
+  await Promise.all(modifiedEntries.map((entry) => dbSaveEntry(entry)));
   render();
 }
 
 function isEntryPaid(entry, paidKey) {
   const legacyMonth = paidKey.split("::")[0];
 
-  return (entry.paidMonths || []).includes(paidKey) || (entry.paidMonths || []).includes(legacyMonth);
+  return (
+    (entry.paidMonths || []).includes(paidKey) || (entry.paidMonths || []).includes(legacyMonth)
+  );
 }
 
 function getPaidKey(month, installmentNumber, repeat) {
@@ -1171,20 +1272,18 @@ function startEdit(id) {
   form.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
-function duplicateEntry(id) {
+async function duplicateEntry(id) {
   const entry = entries.find((item) => item.id === id);
-
-  if (!entry) {
-    return;
-  }
-
-  entries.push({
+  if (!entry) return;
+  const newEntry = {
     ...entry,
     id: crypto.randomUUID(),
     description: `${entry.description} cópia`,
     paidMonths: [],
     createdAt: new Date().toISOString(),
-  });
+  };
+  entries.push(newEntry);
+  await dbSaveEntry(newEntry);
 }
 
 function resetForm() {
@@ -1206,10 +1305,12 @@ function clearListFilters() {
   categoryFilter = "";
   searchQuery = "";
   searchInput.value = "";
-  filterButtons.forEach((button) => button.classList.toggle("active", button.dataset.filter === "all"));
+  filterButtons.forEach((button) =>
+    button.classList.toggle("active", button.dataset.filter === "all"),
+  );
 }
 
-function addNewCard() {
+async function addNewCard() {
   const nextNumber = cardSettings.length + 1;
 
   cardSettings = [
@@ -1223,7 +1324,8 @@ function addNewCard() {
       active: true,
     },
   ];
-  saveCardSettings();
+  const newCard = cardSettings[cardSettings.length - 1];
+  await dbSaveCard(newCard);
   renderCardSettings();
   renderDatalists();
   render();
@@ -1508,7 +1610,12 @@ function getEntriesFromBackup(backup) {
 }
 
 function isValidEntry(entry) {
-  return entry && typeof entry === "object" && typeof entry.description === "string" && Number(entry.amount) > 0;
+  return (
+    entry &&
+    typeof entry === "object" &&
+    typeof entry.description === "string" &&
+    Number(entry.amount) > 0
+  );
 }
 
 function normalizeEntries(savedEntries) {
@@ -1607,12 +1714,12 @@ function getCardTag(cardName) {
   return `<span class="entry-tag card-entry-tag" style="--card-accent: ${escapeHtml(card.color)}">${escapeHtml(card.name)}${inactiveLabel}</span>`;
 }
 
-function saveEntries() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
+async function saveEntries(modifiedEntries = []) {
+  await Promise.all(modifiedEntries.map((entry) => dbSaveEntry(entry)));
 }
 
-function saveCardSettings() {
-  localStorage.setItem(CARD_SETTINGS_KEY, JSON.stringify(cardSettings));
+async function saveCardSettings(modifiedCards = []) {
+  await Promise.all(modifiedCards.map((card) => dbSaveCard(card)));
 }
 
 function saveCategoryLimits() {
