@@ -87,4 +87,28 @@ function iniciarApp(user) {
   // Guarda o usuário atual numa variável global
   window.currentUser = user;
   // O app.js vai rodar normalmente a partir daqui
+  adicionarBotaoLogout();
+}
+
+function adicionarBotaoLogout() {
+  const btn = document.createElement("button");
+  btn.textContent = "Sair";
+  btn.style.cssText = `
+    position: fixed;
+    bottom: 1rem;
+    right: 1rem;
+    padding: 0.5rem 1rem;
+    background: transparent;
+    border: 1px solid var(--border, #ccc);
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.875rem;
+    opacity: 0.6;
+    z-index: 999;
+  `;
+  btn.addEventListener("click", async () => {
+    await supabaseClient.auth.signOut();
+    location.reload();
+  });
+  document.body.appendChild(btn);
 }
