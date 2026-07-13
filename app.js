@@ -85,8 +85,6 @@ const cardBreakdown = document.querySelector("#cardBreakdown");
 const categoryBreakdown = document.querySelector("#categoryBreakdown");
 const exportBackup = document.querySelector("#exportBackup");
 const exportPdf = document.querySelector("#exportPdf");
-const importBackup = document.querySelector("#importBackup");
-const importCsv = document.querySelector("#importCsv");
 const themeSelect = document.querySelector("#themeSelect");
 const systemTheme = window.matchMedia("(prefers-color-scheme: dark)");
 const searchInput = document.querySelector("#searchInput");
@@ -196,8 +194,6 @@ repeatSelect.addEventListener("change", syncInstallmentsField);
 typeSelect.addEventListener("change", syncCardField);
 exportBackup.addEventListener("click", downloadBackup);
 exportPdf.addEventListener("click", exportMonthPdf);
-importBackup.addEventListener("change", importBackupFile);
-importCsv.addEventListener("change", importCsvFile);
 cancelEdit.addEventListener("click", resetForm);
 addCard.addEventListener("click", addNewCard);
 searchInput.addEventListener("input", () => {
@@ -864,83 +860,6 @@ function getPdfEntryRow(entry) {
   `;
 }
 
-function importBackupFile(event) {
-  const [file] = event.target.files;
-
-  if (!file) {
-    return;
-  }
-
-  const reader = new FileReader();
-
-  reader.addEventListener("load", async () => {
-    try {
-      const backup = JSON.parse(reader.result);
-      const importedEntries = getEntriesFromBackup(backup);
-      const confirmed = confirm(
-        "Importar este backup vai substituir os dados salvos neste navegador. Continuar?",
-      );
-
-      if (!confirmed) {
-        return;
-      }
-
-      entries = normalizeEntries(importedEntries);
-      cardSettings = normalizeCardSettings(backup.cardSettings || cardSettings);
-      categoryLimits = backup.categoryLimits || categoryLimits;
-      await Promise.all(entries.map((entry) => dbSaveEntry(entry)));
-      await Promise.all(cardSettings.map((card) => dbSaveCard(card)));
-      renderCardSettings();
-      renderDatalists();
-      render();
-      alert("Backup importado com sucesso.");
-    } catch {
-      alert(
-        "Não consegui importar esse arquivo. Verifique se ele é um backup válido do Economize!.",
-      );
-    } finally {
-      importBackup.value = "";
-    }
-  });
-
-  reader.readAsText(file);
-}
-
-function importCsvFile(event) {
-  const [file] = event.target.files;
-
-  if (!file) {
-    return;
-  }
-
-  const reader = new FileReader();
-
-  reader.addEventListener("load", async () => {
-    try {
-      const importedEntries = parseCsvEntries(reader.result);
-
-      if (!importedEntries.length) {
-        alert("Não encontrei lançamentos válidos no CSV.");
-        return;
-      }
-
-      entries = [...entries, ...importedEntries];
-      await Promise.all(importedEntries.map((entry) => dbSaveEntry(entry)));
-      renderDatalists();
-      render();
-      alert(`${importedEntries.length} lançamento(s) importado(s).`);
-    } catch {
-      alert(
-        "Não consegui importar esse CSV. Use colunas como descrição, valor, tipo, categoria, data e cartão.",
-      );
-    } finally {
-      importCsv.value = "";
-    }
-  });
-
-  reader.readAsText(file);
-}
-
 function getMonthEntries() {
   return getEntriesForMonth(monthInput.value);
 }
@@ -1381,121 +1300,6 @@ function getInvoiceMonth(cardName, date) {
   return baseMonth;
 }
 
-function parseCsvEntries(content) {
-  const lines = content.split(/\r?\n/).filter((line) => line.trim());
-
-  if (lines.length < 2) {
-    return [];
-  }
-
-  const delimiter = lines[0].includes(";") ? ";" : ",";
-  const headers = parseCsvLine(lines[0], delimiter).map(normalizeHeader);
-
-  return lines.slice(1).flatMap((line) => {
-    const values = parseCsvLine(line, delimiter);
-    const row = headers.reduce((data, header, index) => {
-      data[header] = values[index] || "";
-      return data;
-    }, {});
-    const amount = Number((row.valor || row.amount || "").replace(/\./g, "").replace(",", "."));
-
-    if (!row.descricao && !row.description) {
-      return [];
-    }
-
-    if (!amount || amount <= 0) {
-      return [];
-    }
-
-    const type = normalizeType(row.tipo || row.type);
-    const dueDate = normalizeDate(row.data || row.date || row.vencimento);
-
-    return [
-      {
-        id: crypto.randomUUID(),
-        startMonth: dueDate ? dueDate.slice(0, 7) : monthInput.value,
-        description: row.descricao || row.description,
-        amount,
-        type,
-        cardName: type === "credit" ? row.cartao || row.card || "Cartão não informado" : "",
-        category: row.categoria || row.category || "",
-        dueDate,
-        repeat: "once",
-        installments: 1,
-        paidMonths: [],
-        createdAt: new Date().toISOString(),
-      },
-    ];
-  });
-}
-
-function parseCsvLine(line, delimiter) {
-  const values = [];
-  let current = "";
-  let insideQuotes = false;
-
-  for (const char of line) {
-    if (char === '"') {
-      insideQuotes = !insideQuotes;
-    } else if (char === delimiter && !insideQuotes) {
-      values.push(current.trim());
-      current = "";
-    } else {
-      current += char;
-    }
-  }
-
-  values.push(current.trim());
-
-  return values.map((value) => value.replace(/^"|"$/g, ""));
-}
-
-function normalizeHeader(header) {
-  return header
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .trim();
-}
-
-function normalizeType(type) {
-  const normalized = normalizeHeader(type || "");
-
-  if (["entrada", "income", "salario"].includes(normalized)) {
-    return "income";
-  }
-
-  if (["conta", "bill"].includes(normalized)) {
-    return "bill";
-  }
-
-  if (["cartao", "credito", "credit"].includes(normalized)) {
-    return "credit";
-  }
-
-  return "expense";
-}
-
-function normalizeDate(date) {
-  if (!date) {
-    return "";
-  }
-
-  if (/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-    return date;
-  }
-
-  const match = date.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-
-  if (!match) {
-    return "";
-  }
-
-  const [, day, month, year] = match;
-
-  return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
-}
-
 function getMonthOffset(startMonth, selectedMonth) {
   const [startYear, startMonthNumber] = startMonth.split("-").map(Number);
   const [selectedYear, selectedMonthNumber] = selectedMonth.split("-").map(Number);
@@ -1579,24 +1383,6 @@ function getMonthLabel(month) {
   const date = new Date(year, monthNumber - 1, 1);
 
   return date.toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
-}
-
-function loadEntries() {
-  return loadJson(STORAGE_KEY, []);
-}
-
-function loadJson(key, fallback) {
-  const saved = localStorage.getItem(key);
-
-  if (!saved) {
-    return fallback;
-  }
-
-  try {
-    return JSON.parse(saved);
-  } catch {
-    return fallback;
-  }
 }
 
 function getEntriesFromBackup(backup) {
