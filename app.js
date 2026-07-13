@@ -184,6 +184,8 @@ form.addEventListener("submit", async (event) => {
       if (confirmed) {
         monthInput.value = nextMonth;
       }
+    } else if (entry.startMonth && entry.startMonth !== monthInput.value) {
+      monthInput.value = entry.startMonth;
     }
   }
 

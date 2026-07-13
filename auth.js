@@ -24,35 +24,37 @@ function mostrarTelaLogin() {
       font-family: sans-serif;
       background: var(--bg, #f5f5f5);
     ">
-      <h1 style="margin-bottom: 2rem;">💰 Economize!</h1>
+      <h1 style="margin-bottom: 2rem; color: var(--text, #1a1a1a);">💰 Economize!</h1>
       <div style="
-        background: white;
+        background: var(--surface, #ffffff);
+        color: var(--text, #1a1a1a);
         padding: 2rem;
         border-radius: 12px;
-        box-shadow: 0 2px 12px rgba(0,0,0,0.1);
+        box-shadow: var(--shadow, 0 2px 12px rgba(0,0,0,0.1));
         width: 100%;
         max-width: 360px;
+        box-sizing: border-box;
       ">
         <h2 style="margin: 0 0 1.5rem; font-size: 1.25rem;">Entrar</h2>
         <input
           id="login-email"
           type="email"
           placeholder="Email"
-          style="width: 100%; padding: 0.75rem; margin-bottom: 1rem; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; font-size: 1rem;"
+          style="width: 100%; padding: 0.75rem; margin-bottom: 1rem; border: 1px solid var(--line, #ddd); border-radius: 8px; background: var(--surface-deep, #f3f4f6); color: var(--text, #1a1a1a); box-sizing: border-box; font-size: 1rem;"
         />
         <input
           id="login-senha"
           type="password"
           placeholder="Senha"
-          style="width: 100%; padding: 0.75rem; margin-bottom: 1.5rem; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; font-size: 1rem;"
+          style="width: 100%; padding: 0.75rem; margin-bottom: 1.5rem; border: 1px solid var(--line, #ddd); border-radius: 8px; background: var(--surface-deep, #f3f4f6); color: var(--text, #1a1a1a); box-sizing: border-box; font-size: 1rem;"
         />
         <button
           id="login-btn"
-          style="width: 100%; padding: 0.75rem; background: #16a34a; color: white; border: none; border-radius: 8px; font-size: 1rem; cursor: pointer;"
+          style="width: 100%; padding: 0.75rem; background: var(--green, #16a34a); color: var(--button-text, white); border: none; border-radius: 8px; font-size: 1rem; cursor: pointer;"
         >
           Entrar
         </button>
-        <p id="login-erro" style="color: red; margin-top: 1rem; display: none;"></p>
+        <p id="login-erro" style="color: var(--red, red); margin-top: 1rem; display: none;"></p>
       </div>
     </div>
   `;
@@ -99,7 +101,8 @@ function adicionarBotaoLogout() {
     right: 1rem;
     padding: 0.5rem 1rem;
     background: transparent;
-    border: 1px solid var(--border, #ccc);
+    color: var(--text, #1a1a1a);
+    border: 1px solid var(--line, #ccc);
     border-radius: 8px;
     cursor: pointer;
     font-size: 0.875rem;
