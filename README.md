@@ -1,87 +1,111 @@
 # Economize!
 
-Um controle financeiro pessoal simples para substituir a planilha do mês.
+Controle financeiro do casal, feito para substituir a planilha do mês. Mostra quanto entra, quanto sai, quanto sobra e se dá para guardar a meta do mês, considerando cartões de crédito, parcelas e contas fixas.
 
-## Como usar
+Roda direto no navegador, sem build e sem dependências para instalar. Os dados ficam no [Supabase](https://supabase.com), então o mesmo login vê as mesmas informações no celular e no computador.
 
-Abra o arquivo `index.html` no navegador.
+## Funcionalidades
 
-Os dados ficam salvos no próprio navegador usando `localStorage`, então não precisa instalar nada nem criar conta.
+### Mês
+- **Sobra prevista**: entradas menos saídas do mês, com o quanto das entradas já tem destino.
+- **Meta de economia**: valor para guardar todo mês, com um motivo opcional ("Reserva de emergência"). Mostra se a meta cabe no mês e quanto ainda fica livre para gastar.
+- **Faturas do mês**: total de cada cartão, com o dia de vencimento e o botão para marcar a fatura inteira como paga.
+- **Próximas contas**: contas e gastos ainda não pagos, em ordem de vencimento.
+- **Categorias**: para onde o dinheiro foi, com limite mensal opcional por categoria.
+- Comparação com os gastos do mês anterior.
 
-## O que já faz
+### Lançamentos
+- Quatro tipos: **entrada**, **conta**, **gasto** e **cartão**.
+- Recorrência: **só uma vez**, **todo mês** ou **parcelado** (com parcela atual e total).
+- Marcação de pago por ocorrência: pagar a parcela de outubro não marca a de novembro.
+- Busca e filtros por tipo, por "a pagar", por cartão e por categoria.
+- Editar, duplicar e excluir.
+- Aviso antes de salvar um gasto que deixa o mês abaixo da meta de economia.
 
-- Seleciona o mês de controle
-- Cadastra entradas, contas, gastos e compras no cartão
-- Informa qual cartão foi usado em cada compra
-- Cadastra contas fixas mensais, como aluguel, internet e salário
-- Cadastra contas parceladas, como compras no cartão ou financiamentos
-- Mostra total de entradas, gastos, cartão e saldo previsto
-- Mostra um resumo de gastos separado por cartão
-- Mostra resumo por categoria com limites mensais
-- Configura fechamento e vencimento dos 3 cartões
-- Adiciona novos cartões pela tela de cartões
-- Marca contas como pagas ou pendentes
-- Edita e duplica lançamentos
-- Busca lançamentos por descrição, categoria, cartão ou tipo
-- Filtra lançamentos ao clicar em uma categoria do resumo
-- Compara gastos e saldo com o mês anterior
-- Filtra os lançamentos por tipo
-- Remove lançamentos individuais
-- Limpa os lançamentos únicos do mês atual sem apagar fixos e parcelados
-- Exporta e importa backup dos dados em arquivo `.json`
-- Importa lançamentos de `.csv`
-- Exporta relatório mensal em PDF pela impressão do navegador
-- Alterna o tema entre sistema, escuro e claro
+### Cartões de crédito
+- Cada cartão tem dia de fechamento, dia de vencimento e cor.
+- **A compra conta no mês em que a fatura vence**, e não no mês em que foi feita. Uma compra no dia 6 num cartão que fecha no dia 28 e vence no dia 5 aparece no mês seguinte, quando o dinheiro de fato sai da conta.
+- O formulário mostra em qual fatura a compra vai cair antes de salvar.
+- Cartões podem ser marcados como "fora de uso": o histórico fica e eles somem do formulário.
 
-## Como lançar contas automáticas
+### Ajustes
+- Tema claro, escuro ou automático (segue o sistema).
+- Relatório do mês em PDF, pela impressão do navegador.
+- Backup completo em `.json`.
+- Limpeza dos lançamentos únicos do mês, mantendo os fixos e os parcelados.
 
-Use o campo `Recorrência`:
+## Tecnologias
 
-- `Único`: aparece somente no mês da data inicial.
-- `Fixo mensal`: aparece automaticamente em todos os meses a partir da data inicial.
-- `Parcelado`: aparece automaticamente pelo número de parcelas informado.
+| Parte | Escolha |
+| --- | --- |
+| Interface | HTML, CSS e JavaScript puros, sem framework e sem build |
+| Dados e login | Supabase (Postgres, Auth e Row Level Security) |
+| Cliente Supabase | `@supabase/supabase-js` v2, carregado por CDN |
+| Fontes | Bricolage Grotesque e Figtree (Google Fonts) |
 
-Para compras parceladas, informe o valor de cada parcela no campo `Valor`, o total de parcelas no campo `Total` e em qual parcela a cobrança está no campo `Parcela atual`.
+O layout é pensado primeiro para o celular: no celular, as abas ficam numa barra inferior e, no computador, no topo.
 
-Exemplo: se uma compra está na terceira parcela de doze, preencha `Total` como `12` e `Parcela atual` como `3`. O mês atual aparecerá como `Parcelado 3/12`.
+## Estrutura
 
-## Como usar cartões
+```
+.
+├── index.html        # Telas, abas e diálogos
+├── styles.css        # Tema "Papel e tinta" (claro e escuro) e layout responsivo
+├── app.js            # Regras de negócio, renderização e eventos
+├── auth.js           # Login, sessão e início do app
+├── db.js             # Acesso ao Supabase (leitura e escrita das tabelas)
+├── supabase.js       # URL do projeto e chave pública do Supabase
+└── supabase/
+    ├── category_limits.sql   # Tabela de limites por categoria
+    └── user_settings.sql     # Tabela da meta de economia
+```
 
-Ao escolher o tipo `Cartão`, o campo `Cartão usado` aparece automaticamente.
+## Como rodar
 
-Você pode usar as sugestões `Nubank`, `Nu Empresas` e `Mercado Pago`, ou digitar outro nome se criar um novo cartão.
+### 1. Configurar o Supabase
 
-No painel `Cartões`, configure o dia de fechamento e vencimento de cada cartão. Compras no cartão mostram automaticamente a fatura correspondente.
+1. Crie um projeto no Supabase.
+2. Em **Authentication → Users**, crie o usuário que vai usar o app. Não há tela de cadastro: o acesso é só por login.
+3. Crie as tabelas `entries` e `cards` (veja [Banco de dados](#banco-de-dados)).
+4. No **SQL Editor**, rode os arquivos da pasta [`supabase/`](supabase/).
+5. Coloque a URL do projeto e a chave pública (*publishable key*) em [`supabase.js`](supabase.js).
 
-Use `Adicionar cartão` para criar novos cartões. Cartões sem lançamentos podem ser removidos.
+### 2. Abrir o app
 
-## Categorias e limites
+Abra o `index.html` no navegador. Para servir localmente:
 
-O resumo por categoria mostra quanto foi gasto em cada área do mês. Clique em uma categoria para filtrar os lançamentos daquela categoria.
+```bash
+python3 -m http.server 8000
+```
 
-Use `Definir limite` para criar uma meta mensal para uma categoria. Para remover um limite, edite e deixe o valor vazio ou inválido.
+Depois acesse `http://localhost:8000`.
 
-## Backup
+Para publicar, qualquer hospedagem de site estático funciona (GitHub Pages, Netlify, Vercel), sem nenhuma etapa de build.
 
-Use `Exportar backup` para baixar um arquivo `.json` com todos os lançamentos salvos no navegador.
+## Banco de dados
 
-Use `Importar backup` para carregar esse arquivo depois. A importação substitui os dados atuais do navegador pelo conteúdo do backup.
+Todas as tabelas têm a coluna `user_id` e usam Row Level Security: cada login só lê e altera os próprios dados.
 
-## PDF
+| Tabela | Para que serve | Criação |
+| --- | --- | --- |
+| `entries` | Lançamentos | Manual (colunas abaixo) |
+| `cards` | Cartões de crédito | Manual (colunas abaixo) |
+| `category_limits` | Limite mensal por categoria | [`supabase/category_limits.sql`](supabase/category_limits.sql) |
+| `user_settings` | Meta de economia | [`supabase/user_settings.sql`](supabase/user_settings.sql) |
 
-Use `Exportar PDF` para gerar um relatório do mês selecionado. O navegador abrirá a tela de impressão, onde você pode escolher `Salvar como PDF`.
+**`entries`**: `id`, `user_id`, `description`, `amount`, `type` (`income`, `bill`, `expense` ou `credit`), `category`, `due_date`, `start_month` (`AAAA-MM`), `repeat` (`once`, `fixed` ou `installment`), `installments`, `card_name`, `paid_months` (array de texto) e `created_at`.
 
-## CSV
+**`cards`**: `id`, `user_id`, `name`, `closing_day`, `due_day`, `color`, `active` e `created_at`.
 
-Use `Importar CSV` para trazer lançamentos de uma planilha.
+### Como os pagamentos são guardados
 
-Colunas aceitas:
+Cada lançamento guarda em `paid_months` as ocorrências já pagas, no formato `AAAA-MM::parcela` (por exemplo, `2026-11::2` para a segunda parcela paga em novembro). Nas compras no cartão, o mês é o do vencimento da fatura. O valor `invoice-month-v1` dentro do array indica que o lançamento já usa essa regra, e serve para que a migração dos dados antigos rode uma única vez.
 
-- `descricao` ou `description`
-- `valor` ou `amount`
-- `tipo` ou `type`
-- `categoria` ou `category`
-- `data`, `date` ou `vencimento`
-- `cartao` ou `card`
+## Segurança
 
-O CSV pode ser separado por vírgula ou ponto e vírgula.
+- A chave em `supabase.js` é a chave **pública** do Supabase, feita para ficar no navegador. Quem protege os dados é o **Row Level Security**, então ele precisa estar ativo em **todas** as tabelas, inclusive `entries` e `cards`.
+- Nunca coloque a chave `service_role` neste projeto.
+
+## Licença
+
+Projeto pessoal, de uso privado.
