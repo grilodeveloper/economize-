@@ -55,6 +55,45 @@ async function dbDeleteCard(id) {
   if (error) console.error("Erro ao deletar card:", error);
 }
 
+// Limites por categoria: { "Mercado": 1500, ... }
+// Retorna null se a tabela não existir ainda (o app volta a usar o localStorage)
+async function dbLoadCategoryLimits() {
+  const { data, error } = await supabaseClient.from("category_limits").select("category, amount");
+
+  if (error) {
+    console.error("Erro ao carregar limites:", error);
+    return null;
+  }
+
+  return Object.fromEntries(data.map((row) => [row.category, Number(row.amount)]));
+}
+
+async function dbSaveCategoryLimit(category, amount) {
+  const { error } = await supabaseClient.from("category_limits").upsert(
+    {
+      user_id: window.currentUser.id,
+      category,
+      amount,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "user_id,category" },
+  );
+
+  if (error) console.error("Erro ao salvar limite:", error);
+  return !error;
+}
+
+async function dbDeleteCategoryLimit(category) {
+  const { error } = await supabaseClient
+    .from("category_limits")
+    .delete()
+    .eq("user_id", window.currentUser.id)
+    .eq("category", category);
+
+  if (error) console.error("Erro ao remover limite:", error);
+  return !error;
+}
+
 // Conversores banco → app (snake_case → camelCase)
 function dbEntryToApp(row) {
   return {

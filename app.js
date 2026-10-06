@@ -59,43 +59,63 @@ const currency = new Intl.NumberFormat("pt-BR", {
 });
 
 const monthInput = document.querySelector("#monthInput");
+const monthLabel = document.querySelector("#monthLabel");
+const prevMonth = document.querySelector("#prevMonth");
+const nextMonth = document.querySelector("#nextMonth");
 const form = document.querySelector("#entryForm");
+const entryDialog = document.querySelector("#entryDialog");
+const entryDialogTitle = document.querySelector("#entryDialogTitle");
 const entryList = document.querySelector("#entryList");
 const entryCount = document.querySelector("#entryCount");
+const entryHint = document.querySelector("#entryHint");
+const entryError = document.querySelector("#entryError");
+const amountLabel = document.querySelector("#amountLabel");
 const totalIncome = document.querySelector("#totalIncome");
 const totalExpenses = document.querySelector("#totalExpenses");
+const paidTotalText = document.querySelector("#paidTotal");
+const pendingTotalText = document.querySelector("#pendingTotal");
 const creditTotal = document.querySelector("#creditTotal");
 const balance = document.querySelector("#balance");
-const balanceCard = document.querySelector(".summary-card.balance");
 const spentPercent = document.querySelector("#spentPercent");
-const availableText = document.querySelector("#availableText");
+const comparison = document.querySelector("#comparison");
 const progressBar = document.querySelector("#progressBar");
+const invoiceList = document.querySelector("#invoiceList");
+const upcomingList = document.querySelector("#upcomingList");
+const categoryList = document.querySelector("#categoryList");
+const toggleCategories = document.querySelector("#toggleCategories");
 const clearMonth = document.querySelector("#clearMonth");
-const emptyTemplate = document.querySelector("#emptyStateTemplate");
-const filterButtons = document.querySelectorAll(".filter-button");
-const repeatSelect = document.querySelector("#repeat");
-const repeatRow = document.querySelector("#repeatRow");
-const installmentsField = document.querySelector("#installmentsField");
+const filterButtons = document.querySelectorAll("[data-filter]");
+const activeFilters = document.querySelector("#activeFilters");
+const installmentsRow = document.querySelector("#installmentsRow");
 const installmentsInput = document.querySelector("#installments");
-const currentInstallmentField = document.querySelector("#currentInstallmentField");
 const currentInstallmentInput = document.querySelector("#currentInstallment");
-const typeSelect = document.querySelector("#type");
 const cardField = document.querySelector("#cardField");
-const cardNameInput = document.querySelector("#cardName");
-const cardBreakdown = document.querySelector("#cardBreakdown");
-const categoryBreakdown = document.querySelector("#categoryBreakdown");
+const cardChoices = document.querySelector("#cardChoices");
+const cardList = document.querySelector("#cardList");
 const exportBackup = document.querySelector("#exportBackup");
 const exportPdf = document.querySelector("#exportPdf");
-const themeSelect = document.querySelector("#themeSelect");
+const pdfMonthLabel = document.querySelector("#pdfMonthLabel");
+const themeRadios = document.querySelectorAll('input[name="theme"]');
 const systemTheme = window.matchMedia("(prefers-color-scheme: dark)");
 const searchInput = document.querySelector("#searchInput");
 const submitEntry = document.querySelector("#submitEntry");
-const cancelEdit = document.querySelector("#cancelEdit");
-const cardSettingsList = document.querySelector("#cardSettingsList");
-const dashboardPanel = document.querySelector("#dashboardPanel");
 const categoryOptions = document.querySelector("#categoryOptions");
-const cardOptions = document.querySelector("#cardOptions");
 const addCard = document.querySelector("#addCard");
+const actionDialog = document.querySelector("#actionDialog");
+const cardDialog = document.querySelector("#cardDialog");
+const cardForm = document.querySelector("#cardForm");
+const cardError = document.querySelector("#cardError");
+const limitDialog = document.querySelector("#limitDialog");
+const limitForm = document.querySelector("#limitForm");
+const limitInput = document.querySelector("#limitInput");
+const limitError = document.querySelector("#limitError");
+const confirmDialog = document.querySelector("#confirmDialog");
+const toast = document.querySelector("#toast");
+const toastText = document.querySelector("#toastText");
+const toastAction = document.querySelector("#toastAction");
+
+const views = ["mes", "lancamentos", "cartoes", "ajustes"];
+const CATEGORY_PREVIEW = 5;
 
 let entries = [];
 let cardSettings = [];
@@ -105,30 +125,183 @@ let searchQuery = "";
 let editEntryId = null;
 let categoryFilter = "";
 let cardFilter = "";
+let showAllCategories = false;
+let actionTarget = null;
+let editingCardId = null;
+let limitCategory = "";
+let limitsInDatabase = false;
+let toastTimer = null;
 
 async function initApp() {
   monthInput.value = getCurrentMonth();
-  themeSelect.value = loadTheme();
-  applyTheme(themeSelect.value);
-  syncInstallmentsField();
-  syncCardField();
+  syncThemeRadios();
   categoryLimits = loadCategoryLimits();
+  setView(getViewFromHash());
 
   entryList.setAttribute("aria-busy", "true");
-  entryList.innerHTML = `<li class="loading-state">Carregando seus lançamentos...</li>`;
+  entryList.innerHTML = `<li class="empty">Carregando seus lançamentos…</li>`;
 
-  const [loadedEntries, loadedCards] = await Promise.all([dbLoadEntries(), dbLoadCards()]);
+  const [loadedEntries, loadedCards, loadedLimits] = await Promise.all([
+    dbLoadEntries(),
+    dbLoadCards(),
+    dbLoadCategoryLimits(),
+  ]);
 
   entries = normalizeEntries(loadedEntries);
   cardSettings = normalizeCardSettings(loadedCards.length ? loadedCards : defaultCards);
+  categoryLimits = await syncCategoryLimits(loadedLimits);
 
   entryList.removeAttribute("aria-busy");
-  renderCardSettings();
   renderDatalists();
   render();
 }
 
-initApp();
+/* ---------- Navegação ---------- */
+
+function getViewFromHash() {
+  const view = location.hash.replace("#", "");
+  return views.includes(view) ? view : "mes";
+}
+
+function setView(view) {
+  document.querySelectorAll("[data-view]").forEach((section) => {
+    section.hidden = section.dataset.view !== view;
+  });
+  document.querySelectorAll("[data-view-link]").forEach((link) => {
+    if (link.dataset.viewLink === view) {
+      link.setAttribute("aria-current", "page");
+    } else {
+      link.removeAttribute("aria-current");
+    }
+  });
+  window.scrollTo(0, 0);
+}
+
+function goTo(view) {
+  if (location.hash === `#${view}`) {
+    setView(view);
+  } else {
+    location.hash = view;
+  }
+}
+
+window.addEventListener("hashchange", () => setView(getViewFromHash()));
+
+prevMonth.addEventListener("click", () => {
+  monthInput.value = shiftMonth(monthInput.value, -1);
+  render();
+});
+
+nextMonth.addEventListener("click", () => {
+  monthInput.value = shiftMonth(monthInput.value, 1);
+  render();
+});
+
+monthInput.addEventListener("click", () => {
+  try {
+    monthInput.showPicker?.();
+  } catch {
+    // Alguns navegadores não permitem abrir o seletor por script
+  }
+});
+
+monthInput.addEventListener("change", () => {
+  if (!monthInput.value) {
+    monthInput.value = getCurrentMonth();
+  }
+  render();
+});
+
+/* ---------- Diálogos genéricos ---------- */
+
+document.querySelectorAll("dialog").forEach((dialog) => {
+  dialog.addEventListener("click", (event) => {
+    if (event.target === dialog || event.target.closest("[data-close-dialog]")) {
+      dialog.close();
+    }
+  });
+});
+
+function askConfirm({ title, message = "", confirmLabel = "Confirmar", danger = false }) {
+  document.querySelector("#confirmTitle").textContent = title;
+  document.querySelector("#confirmMessage").textContent = message;
+  const okButton = document.querySelector("#confirmOk");
+  okButton.textContent = confirmLabel;
+  okButton.classList.toggle("button-danger", danger);
+  okButton.classList.toggle("button-primary", !danger);
+  confirmDialog.returnValue = "";
+
+  return new Promise((resolve) => {
+    const onOk = () => confirmDialog.close("ok");
+    const onCancel = () => confirmDialog.close("cancel");
+    const onClose = () => {
+      okButton.removeEventListener("click", onOk);
+      document.querySelector("#confirmCancel").removeEventListener("click", onCancel);
+      resolve(confirmDialog.returnValue === "ok");
+    };
+
+    okButton.addEventListener("click", onOk);
+    document.querySelector("#confirmCancel").addEventListener("click", onCancel);
+    confirmDialog.addEventListener("close", onClose, { once: true });
+    confirmDialog.showModal();
+  });
+}
+
+function showToast(text, action) {
+  clearTimeout(toastTimer);
+  toastText.textContent = text;
+  toastAction.hidden = !action;
+  toastAction.onclick = null;
+
+  if (action) {
+    toastAction.textContent = action.label;
+    toastAction.onclick = () => {
+      toast.hidden = true;
+      action.onClick();
+    };
+  }
+
+  toast.hidden = false;
+  toastTimer = setTimeout(() => {
+    toast.hidden = true;
+  }, action ? 7000 : 3500);
+}
+
+/* ---------- Formulário de lançamento ---------- */
+
+document.querySelector("#openEntry").addEventListener("click", () => openEntryDialog());
+document.querySelector("#openEntryDesktop").addEventListener("click", () => openEntryDialog());
+
+function openEntryDialog() {
+  resetForm();
+
+  if (monthInput.value === getCurrentMonth()) {
+    form.elements.dueDate.value = getToday();
+  }
+
+  updateEntryHint();
+  entryDialog.showModal();
+  form.elements.amount.focus();
+}
+
+form.addEventListener("change", (event) => {
+  const { name } = event.target;
+
+  if (name === "type") {
+    syncCardField();
+  }
+
+  if (name === "repeat") {
+    syncInstallmentsField();
+  }
+
+  updateEntryHint();
+});
+
+form.addEventListener("input", () => {
+  entryError.hidden = true;
+  updateEntryHint();
+});
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -140,13 +313,13 @@ form.addEventListener("submit", async (event) => {
   }
 
   const isEditing = Boolean(editEntryId);
+  let savedId = editEntryId;
 
   if (isEditing) {
     const existing = entries.find((item) => item.id === editEntryId);
 
     if (!existing) {
-      alert("Não encontrei esse lançamento para editar. Tente recarregar a página.");
-      resetForm();
+      showFormError("Não encontrei esse lançamento para editar. Recarregue a página e tente de novo.");
       return;
     }
 
@@ -161,238 +334,61 @@ form.addEventListener("submit", async (event) => {
         : item,
     );
   } else {
+    savedId = crypto.randomUUID();
     entries.push({
       ...entry,
-      id: crypto.randomUUID(),
+      id: savedId,
       paidMonths: [],
       createdAt: new Date().toISOString(),
     });
   }
 
-  const entryToSave = entries.find((e) => e.id === (editEntryId || entries[entries.length - 1].id));
-  await dbSaveEntry(entryToSave);
+  submitEntry.disabled = true;
+  await dbSaveEntry(entries.find((item) => item.id === savedId));
+  submitEntry.disabled = false;
+  entryDialog.close();
   renderDatalists();
-
-  if (!isEditing) {
-    const nextMonth = getNextMonthAfterCardDue(entry);
-
-    if (nextMonth) {
-      const confirmed = confirm(
-        `Esse lançamento foi registrado após o vencimento do cartão ${entry.cardName}. Deseja avançar para ${getMonthLabel(nextMonth)}?`,
-      );
-
-      if (confirmed) {
-        monthInput.value = nextMonth;
-      }
-    } else if (entry.startMonth && entry.startMonth !== monthInput.value) {
-      monthInput.value = entry.startMonth;
-    }
-  }
 
   if (isEditing) {
     clearListFilters();
+    showToast("Alterações salvas");
+  } else {
+    const jumpMonth = getNextMonthAfterCardDue(entry);
+
+    if (jumpMonth) {
+      showToast("Lançamento adicionado", {
+        label: `Ir para ${getMonthName(jumpMonth)}`,
+        onClick: () => {
+          monthInput.value = jumpMonth;
+          render();
+        },
+      });
+    } else if (entry.startMonth && entry.startMonth !== monthInput.value) {
+      monthInput.value = entry.startMonth;
+      showToast(`Adicionado em ${getMonthName(entry.startMonth)}`);
+    } else {
+      showToast("Lançamento adicionado");
+    }
   }
 
   resetForm();
   render();
 });
 
-monthInput.addEventListener("change", render);
-repeatSelect.addEventListener("change", syncInstallmentsField);
-typeSelect.addEventListener("change", syncCardField);
-exportBackup.addEventListener("click", downloadBackup);
-exportPdf.addEventListener("click", exportMonthPdf);
-cancelEdit.addEventListener("click", resetForm);
-addCard.addEventListener("click", addNewCard);
-searchInput.addEventListener("input", () => {
-  searchQuery = searchInput.value.trim().toLowerCase();
-  render();
-});
-themeSelect.addEventListener("change", () => {
-  saveTheme(themeSelect.value);
-  applyTheme(themeSelect.value);
-});
-systemTheme.addEventListener("change", () => {
-  if (themeSelect.value === "system") {
-    applyTheme("system");
-  }
-});
-
-clearMonth.addEventListener("click", async () => {
-  const removableEntries = entries.filter(
-    (entry) => entry.repeat === "once" && entry.startMonth === monthInput.value,
-  );
-
-  if (!removableEntries.length) {
-    return;
-  }
-
-  const confirmed = confirm(
-    "Apagar os lançamentos únicos deste mês? Contas fixas e parceladas serão mantidas.",
-  );
-
-  if (!confirmed) {
-    return;
-  }
-
-  const removableIds = removableEntries.map((entry) => entry.id);
-  entries = entries.filter((entry) => !removableIds.includes(entry.id));
-  await Promise.all(removableIds.map((id) => dbDeleteEntry(id)));
-  render();
-});
-
-filterButtons.forEach((button) => {
-  button.addEventListener("click", () => {
-    activeFilter = button.dataset.filter;
-    filterButtons.forEach((item) => item.classList.toggle("active", item === button));
-    render();
-  });
-});
-
-entryList.addEventListener("click", async (event) => {
-  const action = event.target.closest("[data-action]");
-
-  if (!action) {
-    return;
-  }
-
-  const { id, action: actionName, paidKey } = action.dataset;
-
-  if (actionName === "delete") {
-    entries = entries.filter((entry) => entry.id !== id);
-    await dbDeleteEntry(id);
-  }
-
-  if (actionName === "paid") {
-    entries = entries.map((entry) =>
-      entry.id === id ? togglePaidOccurrence(entry, paidKey) : entry,
-    );
-    const updated = entries.find((e) => e.id === id);
-    await dbSaveEntry(updated);
-  }
-
-  if (actionName === "edit") {
-    startEdit(id);
-    return;
-  }
-
-  if (actionName === "duplicate") {
-    await duplicateEntry(id);
-  }
-
-  render();
-});
-
-cardSettingsList.addEventListener("input", async (event) => {
-  const input = event.target.closest("[data-card-setting]");
-
-  if (!input) {
-    return;
-  }
-
-  const { cardId, cardSetting } = input.dataset;
-  cardSettings = cardSettings.map((card) =>
-    card.id === cardId
-      ? {
-          ...card,
-          [cardSetting]: getCardSettingValue(cardSetting, input),
-        }
-      : card,
-  );
-  const updatedCard = cardSettings.find((c) => c.id === cardId);
-  await dbSaveCard(updatedCard);
-  renderCardSettings();
-  renderDatalists();
-  render();
-});
-
-cardSettingsList.addEventListener("click", async (event) => {
-  const button = event.target.closest("[data-remove-card]");
-
-  if (!button) {
-    return;
-  }
-
-  const card = cardSettings.find((item) => item.id === button.dataset.removeCard);
-
-  if (!card) {
-    return;
-  }
-
-  const isUsed = entries.some((entry) => entry.cardName === card.name);
-
-  if (isUsed) {
-    alert("Esse cartão já tem lançamentos. Para manter seu histórico, ele não pode ser removido.");
-    return;
-  }
-
-  cardSettings = cardSettings.filter((item) => item.id !== card.id);
-  await dbDeleteCard(card.id);
-  renderCardSettings();
-  renderDatalists();
-  render();
-});
-
-categoryBreakdown.addEventListener("click", (event) => {
-  const limitButton = event.target.closest("[data-set-limit]");
-
-  if (limitButton) {
-    handleSetCategoryLimit(limitButton.dataset.setLimit);
-    return;
-  }
-
-  const filterTarget = event.target.closest("[data-category-filter]");
-
-  if (!filterTarget) {
-    return;
-  }
-
-  categoryFilter =
-    categoryFilter === filterTarget.dataset.categoryFilter
-      ? ""
-      : filterTarget.dataset.categoryFilter;
-  render();
-});
-
-cardBreakdown.addEventListener("click", (event) => {
-  const unpayButton = event.target.closest("[data-unpay-card]");
-
-  if (unpayButton) {
-    markCardEntriesAsUnpaid(unpayButton.dataset.unpayCard);
-    return;
-  }
-
-  const payButton = event.target.closest("[data-pay-card]");
-
-  if (payButton) {
-    markCardEntriesAsPaid(payButton.dataset.payCard);
-    return;
-  }
-
-  const clearButton = event.target.closest("[data-clear-card-filter]");
-
-  if (clearButton) {
-    cardFilter = "";
-    render();
-    return;
-  }
-
-  const filterTarget = event.target.closest("[data-card-filter]");
-
-  if (!filterTarget) {
-    return;
-  }
-
-  cardFilter =
-    cardFilter === filterTarget.dataset.cardFilter ? "" : filterTarget.dataset.cardFilter;
-  render();
-});
-
 function getEntryFromForm() {
   const formData = new FormData(form);
   const amount = Number(formData.get("amount"));
+  const description = String(formData.get("description") || "").trim();
 
   if (!amount || amount <= 0) {
+    showFormError("Informe um valor maior que zero.");
+    form.elements.amount.focus();
+    return null;
+  }
+
+  if (!description) {
+    showFormError("Dê um nome para o lançamento.");
+    form.elements.description.focus();
     return null;
   }
 
@@ -401,37 +397,479 @@ function getEntryFromForm() {
   const currentInstallment = getCurrentInstallment(formData);
 
   if (repeat === "installment" && currentInstallment > installments) {
-    alert("A parcela atual não pode ser maior que o total de parcelas.");
+    showFormError("A parcela atual não pode ser maior que o total de parcelas.");
     return null;
   }
 
   return {
     startMonth: getEntryStartMonth(formData.get("dueDate"), currentInstallment, repeat),
-    description: formData.get("description").trim(),
+    description,
     amount,
     type: formData.get("type"),
     cardName: getCardName(formData),
-    category: formData.get("category").trim(),
+    category: String(formData.get("category") || "").trim(),
     dueDate: formData.get("dueDate"),
     repeat,
     installments,
   };
 }
 
-function render() {
-  const monthEntries = getMonthEntries();
-  const cards = getCreditCardTotals(monthEntries);
+function showFormError(message) {
+  entryError.textContent = message;
+  entryError.hidden = false;
+}
 
-  if (cardFilter && !cards.some(([cardName]) => cardName === cardFilter)) {
-    cardFilter = "";
+function updateEntryHint() {
+  const type = getRadioValue(form, "type");
+  const repeat = getRadioValue(form, "repeat");
+  const date = form.elements.dueDate.value;
+  const cardName = getRadioValue(form, "cardName");
+  const hints = [];
+
+  amountLabel.textContent = repeat === "installment" ? "Valor da parcela" : "Valor";
+
+  if (repeat === "installment") {
+    const total = Math.max(Number(installmentsInput.value) || 2, 2);
+    const current = Math.max(Number(currentInstallmentInput.value) || 1, 1);
+    const amount = Number(form.elements.amount.value) || 0;
+    const remaining = Math.max(total - current + 1, 0);
+    hints.push(
+      amount
+        ? `Parcela ${current} de ${total}. Faltam ${remaining}, ${currency.format(amount * remaining)} no total.`
+        : `Parcela ${current} de ${total}.`,
+    );
   }
 
-  const visibleEntries = getVisibleEntries(monthEntries);
+  if (repeat === "fixed") {
+    const start = date ? date.slice(0, 7) : monthInput.value;
+    hints.push(`Aparece todo mês a partir de ${getMonthName(start)}.`);
+  }
+
+  if (type === "credit" && cardName && date) {
+    const card = getCardConfig(cardName);
+    const closingMonth = getInvoiceMonth(cardName, date);
+    const dueMonth = card.dueDay <= card.closingDay ? shiftMonth(closingMonth, 1) : closingMonth;
+    hints.push(`Vai para a fatura do ${cardName} que vence em ${card.dueDay} de ${getMonthName(dueMonth)}.`);
+  }
+
+  entryHint.textContent = hints.join(" ");
+  entryHint.hidden = !hints.length;
+}
+
+function renderCardChoices(selectedName = "") {
+  const activeNames = getSortedCardSettings()
+    .filter((card) => card.active)
+    .map((card) => card.name);
+  const names = [...new Set([...activeNames, selectedName].filter(Boolean))];
+  const checkedName = selectedName || names[0] || "";
+
+  if (!names.length) {
+    cardChoices.innerHTML = `<p class="muted-text">Cadastre um cartão na aba Cartões.</p>`;
+    return;
+  }
+
+  cardChoices.innerHTML = names
+    .map((name) => {
+      const card = getCardConfig(name);
+      return `
+        <label class="chip chip-radio">
+          <input type="radio" name="cardName" value="${escapeHtml(name)}" ${name === checkedName ? "checked" : ""} />
+          <span class="dot" style="--dot: ${escapeHtml(card.color)}"></span>${escapeHtml(name)}
+        </label>`;
+    })
+    .join("");
+}
+
+/* ---------- Lista: filtros e ações ---------- */
+
+searchInput.addEventListener("input", () => {
+  searchQuery = searchInput.value.trim().toLowerCase();
+  render();
+});
+
+filterButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    setFilter(button.dataset.filter);
+    render();
+  });
+});
+
+function setFilter(filter) {
+  activeFilter = filter;
+  filterButtons.forEach((item) =>
+    item.classList.toggle("is-active", item.dataset.filter === filter),
+  );
+}
+
+document.querySelectorAll("[data-quick-filter]").forEach((link) => {
+  link.addEventListener("click", () => {
+    setFilter(link.dataset.quickFilter);
+    render();
+  });
+});
+
+activeFilters.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-clear]");
+
+  if (!button) {
+    return;
+  }
+
+  if (button.dataset.clear === "card") {
+    cardFilter = "";
+  } else {
+    categoryFilter = "";
+  }
+
+  render();
+});
+
+document.querySelector(".views").addEventListener("click", async (event) => {
+  const action = event.target.closest("[data-action]");
+
+  if (!action) {
+    return;
+  }
+
+  const { id, action: actionName, paidKey } = action.dataset;
+
+  if (actionName === "paid") {
+    await togglePaid(id, paidKey);
+  }
+
+  if (actionName === "open") {
+    openActionDialog(id);
+  }
+
+  if (actionName === "pay-card") {
+    await markCardEntriesAsPaid(action.dataset.card);
+  }
+
+  if (actionName === "unpay-card") {
+    await markCardEntriesAsUnpaid(action.dataset.card);
+  }
+
+  if (actionName === "card-entries") {
+    cardFilter = action.dataset.card;
+    categoryFilter = "";
+    setFilter("all");
+    render();
+    goTo("lancamentos");
+  }
+
+  if (actionName === "category") {
+    openLimitDialog(action.dataset.category);
+  }
+
+  if (actionName === "edit-card") {
+    openCardDialog(action.dataset.cardId);
+  }
+});
+
+async function togglePaid(id, paidKey) {
+  entries = entries.map((entry) => (entry.id === id ? togglePaidOccurrence(entry, paidKey) : entry));
+  render();
+  await dbSaveEntry(entries.find((entry) => entry.id === id));
+}
+
+function openActionDialog(id) {
+  const entry = entries.find((item) => item.id === id);
+  const occurrence = entry && getOccurrenceForMonth(entry, monthInput.value)[0];
+
+  if (!occurrence) {
+    return;
+  }
+
+  actionTarget = occurrence;
+  document.querySelector("#actionTitle").textContent = occurrence.description;
+  document.querySelector("#actionMeta").textContent = [
+    occurrence.occurrenceDate ? formatDate(occurrence.occurrenceDate) : "",
+    getEntryMeta(occurrence),
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  document.querySelector("#actionAmount").textContent =
+    `${occurrence.type === "income" ? "+ " : ""}${currency.format(occurrence.amount)}`;
+
+  const paidButton = document.querySelector("#actionPaid");
+  paidButton.hidden = occurrence.type === "income";
+  paidButton.textContent = occurrence.isPaid ? "Desfazer pagamento" : "Marcar como pago";
+  actionDialog.showModal();
+}
+
+document.querySelector("#actionPaid").addEventListener("click", async () => {
+  actionDialog.close();
+  await togglePaid(actionTarget.id, actionTarget.paidKey);
+});
+
+document.querySelector("#actionEdit").addEventListener("click", () => {
+  actionDialog.close();
+  startEdit(actionTarget.id);
+});
+
+document.querySelector("#actionDuplicate").addEventListener("click", async () => {
+  actionDialog.close();
+  await duplicateEntry(actionTarget.id);
+  render();
+  showToast("Lançamento duplicado");
+});
+
+document.querySelector("#actionDelete").addEventListener("click", async () => {
+  const target = actionTarget;
+  actionDialog.close();
+
+  const isRecurring = target.repeat === "fixed" || target.repeat === "installment";
+  const confirmed = await askConfirm({
+    title: `Excluir "${target.description}"?`,
+    message: isRecurring
+      ? "Isso remove o lançamento de todos os meses, não só deste."
+      : "Essa ação não pode ser desfeita.",
+    confirmLabel: "Excluir",
+    danger: true,
+  });
+
+  if (!confirmed) {
+    return;
+  }
+
+  entries = entries.filter((entry) => entry.id !== target.id);
+  render();
+  await dbDeleteEntry(target.id);
+  showToast("Lançamento excluído");
+});
+
+/* ---------- Categorias ---------- */
+
+toggleCategories.addEventListener("click", () => {
+  showAllCategories = !showAllCategories;
+  render();
+});
+
+function openLimitDialog(category) {
+  const total = getCategoryTotals(getMonthEntries()).find(([name]) => name === category)?.[1] || 0;
+  const limit = categoryLimits[category];
+
+  limitCategory = category;
+  limitError.hidden = true;
+  document.querySelector("#limitTitle").textContent = category;
+  document.querySelector("#limitMeta").textContent =
+    `${currency.format(total)} em ${getMonthName(monthInput.value)}`;
+  limitInput.value = limit ? String(limit) : "";
+  limitDialog.showModal();
+}
+
+limitForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const trimmed = limitInput.value.trim();
+  const category = limitCategory;
+  const value = trimmed ? Number(trimmed.replace(",", ".")) : null;
+
+  if (value !== null && (!Number.isFinite(value) || value <= 0)) {
+    limitError.textContent = "Informe um valor maior que zero, ou deixe vazio para tirar o limite.";
+    limitError.hidden = false;
+    return;
+  }
+
+  if (value === null) {
+    delete categoryLimits[category];
+  } else {
+    categoryLimits[category] = value;
+  }
+
+  limitDialog.close();
+  render();
+
+  if (!limitsInDatabase) {
+    saveCategoryLimits();
+    return;
+  }
+
+  const saved =
+    value === null ? await dbDeleteCategoryLimit(category) : await dbSaveCategoryLimit(category, value);
+
+  if (!saved) {
+    showToast("Não consegui salvar o limite. Confira a conexão e tente de novo.");
+  }
+});
+
+document.querySelector("#showCategoryEntries").addEventListener("click", () => {
+  limitDialog.close();
+  categoryFilter = limitCategory;
+  cardFilter = "";
+  setFilter("all");
+  render();
+  goTo("lancamentos");
+});
+
+/* ---------- Cartões ---------- */
+
+addCard.addEventListener("click", () => openCardDialog(null));
+
+function openCardDialog(cardId) {
+  const card = cardSettings.find((item) => item.id === cardId);
+  const nextNumber = cardSettings.length + 1;
+
+  editingCardId = card ? card.id : null;
+  cardError.hidden = true;
+  document.querySelector("#cardDialogTitle").textContent = card ? "Editar cartão" : "Novo cartão";
+  document.querySelector("#cardNameInput").value = card ? card.name : "";
+  document.querySelector("#cardColorInput").value = card
+    ? card.color
+    : cardColorPalette[(nextNumber - 1) % cardColorPalette.length];
+  document.querySelector("#cardClosingInput").value = card ? card.closingDay : 25;
+  document.querySelector("#cardDueInput").value = card ? card.dueDay : 5;
+  document.querySelector("#cardActiveInput").checked = card ? card.active : true;
+  document.querySelector("#removeCard").hidden = !card;
+  cardDialog.showModal();
+}
+
+cardForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+
+  const name = document.querySelector("#cardNameInput").value.trim();
+  const previous = cardSettings.find((card) => card.id === editingCardId);
+
+  if (!name) {
+    showCardError("Dê um nome para o cartão.");
+    return;
+  }
+
+  if (cardSettings.some((card) => card.id !== editingCardId && card.name === name)) {
+    showCardError("Já existe um cartão com esse nome.");
+    return;
+  }
+
+  const card = {
+    id: editingCardId || crypto.randomUUID(),
+    name,
+    color: normalizeCardColor(document.querySelector("#cardColorInput").value),
+    closingDay: clampDay(document.querySelector("#cardClosingInput").value),
+    dueDay: clampDay(document.querySelector("#cardDueInput").value),
+    active: document.querySelector("#cardActiveInput").checked,
+  };
+
+  cardSettings = previous
+    ? cardSettings.map((item) => (item.id === card.id ? card : item))
+    : [...cardSettings, card];
+
+  // Lançamentos guardam o nome do cartão: ao renomear, leva o histórico junto
+  const renamedEntries =
+    previous && previous.name !== name
+      ? entries.filter((entry) => entry.cardName === previous.name)
+      : [];
+
+  if (renamedEntries.length) {
+    entries = entries.map((entry) =>
+      entry.cardName === previous.name ? { ...entry, cardName: name } : entry,
+    );
+  }
+
+  cardDialog.close();
+  renderDatalists();
+  render();
+
+  await dbSaveCard(card);
+  await saveEntries(entries.filter((entry) => renamedEntries.some((old) => old.id === entry.id)));
+  showToast(previous ? "Cartão atualizado" : "Cartão adicionado");
+});
+
+document.querySelector("#removeCard").addEventListener("click", async () => {
+  const card = cardSettings.find((item) => item.id === editingCardId);
+
+  if (!card) {
+    return;
+  }
+
+  if (entries.some((entry) => entry.cardName === card.name)) {
+    showCardError(
+      "Esse cartão tem lançamentos. Para manter o histórico, desmarque “Em uso” em vez de remover.",
+    );
+    return;
+  }
+
+  cardDialog.close();
+
+  const confirmed = await askConfirm({
+    title: `Remover ${card.name}?`,
+    confirmLabel: "Remover",
+    danger: true,
+  });
+
+  if (!confirmed) {
+    return;
+  }
+
+  cardSettings = cardSettings.filter((item) => item.id !== card.id);
+  renderDatalists();
+  render();
+  await dbDeleteCard(card.id);
+  showToast("Cartão removido");
+});
+
+function showCardError(message) {
+  cardError.textContent = message;
+  cardError.hidden = false;
+}
+
+/* ---------- Ajustes ---------- */
+
+exportBackup.addEventListener("click", downloadBackup);
+exportPdf.addEventListener("click", exportMonthPdf);
+
+themeRadios.forEach((radio) => {
+  radio.addEventListener("change", () => {
+    saveTheme(radio.value);
+    applyTheme(radio.value);
+  });
+});
+
+systemTheme.addEventListener("change", () => {
+  if (loadTheme() === "system") {
+    applyTheme("system");
+  }
+});
+
+function syncThemeRadios() {
+  const theme = loadTheme();
+  themeRadios.forEach((radio) => {
+    radio.checked = radio.value === theme;
+  });
+}
+
+clearMonth.addEventListener("click", async () => {
+  const removableEntries = entries.filter(
+    (entry) => entry.repeat === "once" && entry.startMonth === monthInput.value,
+  );
+
+  if (!removableEntries.length) {
+    showToast(`Não há lançamentos únicos em ${getMonthName(monthInput.value)}`);
+    return;
+  }
+
+  const confirmed = await askConfirm({
+    title: `Apagar ${removableEntries.length} lançamento${removableEntries.length === 1 ? "" : "s"} único${removableEntries.length === 1 ? "" : "s"}?`,
+    message: `Só os lançamentos de ${getMonthName(monthInput.value)} que não se repetem. Contas fixas e parceladas ficam.`,
+    confirmLabel: "Apagar",
+    danger: true,
+  });
+
+  if (!confirmed) {
+    return;
+  }
+
+  const removableIds = removableEntries.map((entry) => entry.id);
+  entries = entries.filter((entry) => !removableIds.includes(entry.id));
+  render();
+  await Promise.all(removableIds.map((id) => dbDeleteEntry(id)));
+  showToast("Lançamentos apagados");
+});
+
+/* ---------- Renderização ---------- */
+
+function render() {
+  const monthEntries = getMonthEntries();
   const income = sumByType(monthEntries, "income");
-  const bills = sumByType(monthEntries, "bill");
-  const expenses = sumByType(monthEntries, "expense");
-  const credit = sumByType(monthEntries, "credit");
-  const totalSpent = bills + expenses + credit;
+  const totalSpent = getTotalSpent(monthEntries);
   const paidTotal = monthEntries
     .filter((entry) => entry.type !== "income" && entry.isPaid)
     .reduce((total, entry) => total + Number(entry.amount), 0);
@@ -439,200 +877,172 @@ function render() {
   const monthBalance = income - totalSpent;
   const percent = income > 0 ? Math.min((totalSpent / income) * 100, 100) : 0;
 
+  monthLabel.textContent = capitalize(getMonthLabel(monthInput.value));
+  pdfMonthLabel.textContent = capitalize(getMonthLabel(monthInput.value));
+
+  balance.textContent = currency.format(monthBalance);
+  balance.classList.toggle("is-negative", monthBalance < 0);
   totalIncome.textContent = currency.format(income);
   totalExpenses.textContent = currency.format(totalSpent);
-  creditTotal.textContent = currency.format(credit);
-  balance.textContent = currency.format(monthBalance);
-  balanceCard.classList.toggle("is-negative", monthBalance < 0);
-  balanceCard.classList.toggle("is-positive", monthBalance >= 0);
-  spentPercent.textContent = `${Math.round(percent)}% usado`;
-  availableText.textContent = `${currency.format(paidTotal)} pago · ${currency.format(pendingTotal)} pendente`;
+  paidTotalText.textContent = currency.format(paidTotal);
+  pendingTotalText.textContent = currency.format(pendingTotal);
   progressBar.style.width = `${percent}%`;
-  progressBar.style.background =
-    percent > 85 ? "var(--red)" : percent > 65 ? "var(--yellow)" : "var(--green)";
-  entryCount.textContent = getEntryCountText(monthEntries.length, visibleEntries.length);
+  progressBar.dataset.level = percent > 90 ? "high" : percent > 70 ? "mid" : "low";
+  spentPercent.textContent =
+    income > 0
+      ? `${Math.round((totalSpent / income) * 100)}% das entradas já tem destino`
+      : "Lance as entradas do mês para ver quanto sobra";
 
-  renderDashboard(monthEntries);
-  renderCardBreakdown(monthEntries, cards);
-  renderCategoryBreakdown(monthEntries);
-  renderEntries(visibleEntries);
+  renderComparison(monthEntries);
+  renderInvoices(monthEntries);
+  renderUpcoming(monthEntries);
+  renderCategories(monthEntries);
+  renderEntries(monthEntries);
+  renderCards(monthEntries);
 }
 
-function renderDashboard(monthEntries) {
+function renderComparison(monthEntries) {
   const previousMonth = shiftMonth(monthInput.value, -1);
-  const previousEntries = getEntriesForMonth(previousMonth);
-  const currentSpent = getTotalSpent(monthEntries);
-  const previousSpent = getTotalSpent(previousEntries);
-  const currentBalance = sumByType(monthEntries, "income") - currentSpent;
-  const previousBalance = sumByType(previousEntries, "income") - previousSpent;
-  const spentDiff = currentSpent - previousSpent;
-  const balanceDiff = currentBalance - previousBalance;
+  const previousSpent = getTotalSpent(getEntriesForMonth(previousMonth));
+  const spentDiff = getTotalSpent(monthEntries) - previousSpent;
+  const previousName = getMonthName(previousMonth);
 
-  dashboardPanel.innerHTML = `
-    <div class="insight-item">
-      <span>Comparação com ${getMonthLabel(previousMonth)}</span>
-      <strong>${formatDiff(spentDiff)} em gastos</strong>
-    </div>
-    <div class="insight-item">
-      <span>Saldo vs. mês anterior</span>
-      <strong>${formatDiff(balanceDiff)}</strong>
-    </div>
-  `;
+  if (!previousSpent) {
+    comparison.textContent = "";
+    return;
+  }
+
+  comparison.textContent =
+    spentDiff === 0
+      ? `Mesmo gasto de ${previousName}`
+      : `Gastos ${currency.format(Math.abs(spentDiff))} ${spentDiff > 0 ? "acima" : "abaixo"} de ${previousName}`;
+  comparison.dataset.trend = spentDiff > 0 ? "up" : "down";
 }
 
-function renderCardBreakdown(monthEntries, cards = getCreditCardTotals(monthEntries)) {
+function renderInvoices(monthEntries) {
+  const cards = getCreditCardTotals(monthEntries);
   const creditEntries = monthEntries.filter((entry) => entry.type === "credit");
 
-  cardBreakdown.innerHTML = "";
+  creditTotal.textContent = cards.length ? currency.format(sumByType(monthEntries, "credit")) : "";
 
   if (!cards.length) {
-    cardBreakdown.classList.add("is-hidden");
+    invoiceList.innerHTML = `<li class="empty">Nenhuma compra no cartão em ${getMonthName(monthInput.value)}.</li>`;
     return;
   }
 
-  cardBreakdown.classList.remove("is-hidden");
-  cardBreakdown.innerHTML = `
-    <div class="card-breakdown-title">
-      <strong>Cartões do mês</strong>
-      <span>${cardFilter ? `Filtro: ${escapeHtml(cardFilter)}` : `${creditEntries.length} lançamento${creditEntries.length === 1 ? "" : "s"}`}</span>
-    </div>
-  `;
+  invoiceList.innerHTML = cards
+    .map(([cardName, total]) => {
+      const card = getCardConfig(cardName);
+      const cardEntries = creditEntries.filter(
+        (entry) => (entry.cardName || "Cartão não informado") === cardName,
+      );
+      const unpaidCount = cardEntries.filter((entry) => !entry.isPaid).length;
+      const isPaid = unpaidCount === 0;
 
-  if (cardFilter) {
-    const clear = document.createElement("button");
-    clear.className = "tiny-button";
-    clear.type = "button";
-    clear.textContent = "Limpar filtro de cartão";
-    clear.dataset.clearCardFilter = "true";
-    cardBreakdown.append(clear);
-  }
-
-  cards.forEach(([cardName, total]) => {
-    const card = getCardConfig(cardName);
-    const unpaidCount = creditEntries.filter(
-      (entry) => (entry.cardName || "Cartão não informado") === cardName && !entry.isPaid,
-    ).length;
-    const paidCount = creditEntries.filter(
-      (entry) => (entry.cardName || "Cartão não informado") === cardName && entry.isPaid,
-    ).length;
-    const item = document.createElement("div");
-    item.className = `card-breakdown-item ${cardFilter === cardName ? "is-active" : ""}`;
-    item.dataset.cardFilter = cardName;
-    item.style.setProperty("--card-accent", card.color || "#f2c15f");
-    item.innerHTML = `
-      <div class="card-breakdown-info">
-        <span>${getCardVisualLabel(card)}</span>
-        <strong>${currency.format(total)}</strong>
-      </div>
-      <div class="card-breakdown-actions">
-        <button class="tiny-button" type="button" data-pay-card="${escapeHtml(cardName)}" ${unpaidCount ? "" : "disabled"}>
-          ${unpaidCount ? `Pagar ${unpaidCount}` : "Tudo pago"}
-        </button>
-        <button class="tiny-button" type="button" data-unpay-card="${escapeHtml(cardName)}" ${paidCount ? "" : "disabled"}>
-          ${paidCount ? `Desfazer ${paidCount}` : "Nada pago"}
-        </button>
-      </div>
-    `;
-
-    cardBreakdown.append(item);
-  });
+      return `
+        <li class="row">
+          <button class="row-main row-link" type="button" data-action="card-entries" data-card="${escapeHtml(cardName)}">
+            <strong><span class="dot" style="--dot: ${escapeHtml(card.color)}"></span>${escapeHtml(cardName)}</strong>
+            <small>Vence dia ${card.dueDay} · ${cardEntries.length} compra${cardEntries.length === 1 ? "" : "s"}</small>
+          </button>
+          <span class="row-value">${currency.format(total)}</span>
+          ${
+            isPaid
+              ? `<button class="pill pill-paid" type="button" data-action="unpay-card" data-card="${escapeHtml(cardName)}" title="Desfazer pagamento">Paga</button>`
+              : `<button class="pill" type="button" data-action="pay-card" data-card="${escapeHtml(cardName)}">Pagar</button>`
+          }
+        </li>`;
+    })
+    .join("");
 }
 
-function renderCategoryBreakdown(monthEntries) {
+function renderUpcoming(monthEntries) {
+  const pending = monthEntries
+    .filter((entry) => entry.type !== "income" && entry.type !== "credit" && !entry.isPaid)
+    .sort((a, b) =>
+      (a.occurrenceDate || "9999-12-31").localeCompare(b.occurrenceDate || "9999-12-31"),
+    );
+
+  if (!pending.length) {
+    const hasBills = monthEntries.some((entry) => entry.type === "bill" || entry.type === "expense");
+    upcomingList.innerHTML = `<li class="empty">${hasBills ? "Tudo pago neste mês." : "Nenhuma conta lançada neste mês."}</li>`;
+    return;
+  }
+
+  upcomingList.innerHTML = pending
+    .slice(0, 4)
+    .map(
+      (entry) => `
+        <li class="row">
+          ${getCheckButton(entry)}
+          <button class="row-main row-link" type="button" data-action="open" data-id="${entry.id}">
+            <strong>${escapeHtml(entry.description)}</strong>
+            <small>${entry.occurrenceDate ? `Vence ${formatShortDate(entry.occurrenceDate)}` : "Sem data"}${entry.category ? ` · ${escapeHtml(entry.category)}` : ""}</small>
+          </button>
+          <span class="row-value">${currency.format(entry.amount)}</span>
+        </li>`,
+    )
+    .join("");
+
+  if (pending.length > 4) {
+    upcomingList.innerHTML += `<li class="row-more">e mais ${pending.length - 4}</li>`;
+  }
+}
+
+function renderCategories(monthEntries) {
   const categories = getCategoryTotals(monthEntries);
 
-  categoryBreakdown.innerHTML = "";
-
   if (!categories.length) {
-    categoryBreakdown.classList.add("is-hidden");
+    categoryList.innerHTML = `<li class="empty">Os gastos do mês aparecem aqui, separados por categoria.</li>`;
+    toggleCategories.hidden = true;
     return;
   }
 
-  categoryBreakdown.classList.remove("is-hidden");
-  categoryBreakdown.innerHTML = `
-    <div class="card-breakdown-title">
-      <strong>Categorias</strong>
-      <span>${categoryFilter ? `Filtro: ${escapeHtml(categoryFilter)}` : "Clique para filtrar"}</span>
-    </div>
-  `;
+  const maxTotal = categories[0][1] || 1;
+  const visible = showAllCategories ? categories : categories.slice(0, CATEGORY_PREVIEW);
 
-  if (categoryFilter) {
-    const clear = document.createElement("button");
-    clear.className = "tiny-button";
-    clear.type = "button";
-    clear.textContent = "Limpar filtro de categoria";
-    clear.addEventListener("click", () => {
-      categoryFilter = "";
-      render();
-    });
-    categoryBreakdown.append(clear);
-  }
+  categoryList.innerHTML = visible
+    .map(([category, total]) => {
+      const limit = categoryLimits[category];
+      const hasLimit = typeof limit === "number" && limit > 0;
+      const ratio = hasLimit ? total / limit : total / maxTotal;
+      const level = hasLimit ? (ratio > 1 ? "high" : ratio >= 0.8 ? "mid" : "low") : "none";
 
-  const maxTotal = categories[0]?.[1] || 1;
+      return `
+        <li>
+          <button class="category" type="button" data-action="category" data-category="${escapeHtml(category)}">
+            <span class="category-head">
+              <span>${escapeHtml(category)}</span>
+              <span class="category-value">
+                ${currency.format(total)}${hasLimit ? `<small> / ${currency.format(limit)}</small>` : ""}
+              </span>
+            </span>
+            <span class="bar"><span class="bar-fill" data-level="${level}" style="width: ${Math.min(ratio * 100, 100)}%"></span></span>
+            ${hasLimit && ratio > 1 ? `<small class="danger-text">Passou ${currency.format(total - limit)} do limite</small>` : ""}
+          </button>
+        </li>`;
+    })
+    .join("");
 
-  categories.forEach(([category, total]) => {
-    const limit = categoryLimits[category];
-    const hasLimit = typeof limit === "number" && limit > 0;
-    const overLimit = hasLimit && total > limit;
-    const percent = hasLimit
-      ? Math.min(Math.round((total / limit) * 100), 100)
-      : Math.round((total / maxTotal) * 100);
-    const level = overLimit ? "high" : percent >= 75 ? "mid" : "low";
-    const item = document.createElement("div");
-    item.className = `category-row ${categoryFilter === category ? "is-active" : ""}`;
-    item.dataset.categoryFilter = category;
-    item.innerHTML = `
-      <div class="category-row-header">
-        <span>${escapeHtml(category)}</span>
-        <div class="category-row-value">
-          ${overLimit ? `<span class="entry-tag category-over-tag">Estourou o limite</span>` : ""}
-          <strong>${currency.format(total)}${hasLimit ? `<span class="category-limit-text"> / ${currency.format(limit)}</span>` : ""}</strong>
-          <button class="tiny-button" type="button" data-set-limit="${escapeHtml(category)}">${hasLimit ? "Editar limite" : "Definir limite"}</button>
-        </div>
-      </div>
-      <div class="category-bar-track">
-        <div class="category-bar-fill category-bar-fill--${level}" style="width: ${percent}%"></div>
-      </div>
-    `;
-    categoryBreakdown.append(item);
-  });
+  toggleCategories.hidden = categories.length <= CATEGORY_PREVIEW;
+  toggleCategories.textContent = showAllCategories
+    ? "Mostrar menos"
+    : `Ver todas as ${categories.length} categorias`;
 }
 
-function handleSetCategoryLimit(category) {
-  const current = categoryLimits[category];
-  const input = prompt(
-    `Limite mensal para "${category}" (em R$, deixe vazio para remover):`,
-    current ? String(current) : "",
-  );
-
-  if (input === null) {
-    return;
+function renderEntries(monthEntries) {
+  if (cardFilter && !monthEntries.some((entry) => entry.cardName === cardFilter)) {
+    cardFilter = "";
   }
 
-  const trimmed = input.trim();
-
-  if (!trimmed) {
-    delete categoryLimits[category];
-  } else {
-    const value = Number(trimmed.replace(",", "."));
-
-    if (!Number.isFinite(value) || value <= 0) {
-      alert("Informe um valor numérico maior que zero.");
-      return;
-    }
-
-    categoryLimits[category] = value;
-  }
-
-  saveCategoryLimits();
-  render();
-}
-
-function renderEntries(visibleEntries) {
-  entryList.innerHTML = "";
+  const visibleEntries = getVisibleEntries(monthEntries);
+  renderActiveFilters();
+  entryCount.textContent = getEntryCountText(monthEntries.length, visibleEntries.length);
 
   if (!visibleEntries.length) {
-    entryList.append(emptyTemplate.content.cloneNode(true));
+    entryList.innerHTML = monthEntries.length
+      ? `<li class="empty">Nada encontrado com esses filtros.</li>`
+      : `<li class="empty"><strong>Seu mês está em branco.</strong> Comece pelas entradas e pelas contas fixas, no botão +.</li>`;
     return;
   }
 
@@ -641,126 +1051,186 @@ function renderEntries(visibleEntries) {
   );
 
   let lastDateKey = null;
+  let html = "";
 
   sortedEntries.forEach((entry) => {
     const dateKey = entry.occurrenceDate || "sem-data";
 
     if (dateKey !== lastDateKey) {
       lastDateKey = dateKey;
-      const dateGroup = document.createElement("li");
-      dateGroup.className = "entry-date-group";
-      dateGroup.textContent = entry.occurrenceDate ? formatDate(entry.occurrenceDate) : "Sem data";
-      entryList.append(dateGroup);
+      html += `<li class="entry-date">${entry.occurrenceDate ? formatLongDate(entry.occurrenceDate) : "Sem data"}</li>`;
     }
 
-    const item = document.createElement("li");
-    item.className = `entry-item ${entry.isPaid ? "is-paid" : ""}`;
-
-    const signal = entry.type === "income" ? "+" : "-";
-    const category = entry.category || "Sem categoria";
-    const repeatLabel = getRepeatLabel(entry);
-    const cardTag = entry.type === "credit" ? getCardTag(entry.cardName) : "";
-    const invoiceTag =
-      entry.type === "credit" ? `<span class="entry-tag">${getInvoiceLabel(entry)}</span>` : "";
-    const paidLabel =
-      entry.type === "income"
-        ? ""
-        : `<span class="entry-tag ${entry.isPaid ? "paid-tag" : ""}">${entry.isPaid ? "Pago" : "Pendente"}</span>`;
-
-    item.innerHTML = `
-      <div class="entry-main">
-        <div class="entry-title-row">
+    html += `
+      <li class="entry ${entry.isPaid ? "is-paid" : ""}">
+        ${getCheckButton(entry)}
+        <button class="entry-main" type="button" data-action="open" data-id="${entry.id}">
           <strong>${escapeHtml(entry.description)}</strong>
-          <span class="entry-value entry-value--${entry.type}">${signal} ${currency.format(entry.amount)}</span>
-        </div>
-        <div class="entry-meta">
-          <span class="entry-tag">${typeLabels[entry.type]}</span>
-          ${paidLabel}
-          ${cardTag}
-          ${invoiceTag}
-          <span class="entry-tag">${repeatLabel}</span>
-          ${escapeHtml(category) !== "Sem categoria" ? `<span class="entry-tag">${escapeHtml(category)}</span>` : ""}
-        </div>
-      </div>
-      <div class="entry-actions">
-        <div class="entry-actions-main">
-          ${entry.type === "income" ? "" : `<button class="action-button" type="button" data-action="paid" data-id="${entry.id}" data-paid-key="${entry.paidKey}" aria-label="${entry.isPaid ? "Desfazer pagamento" : "Marcar como pago"}" title="${entry.isPaid ? "Desfazer pagamento" : "Marcar como pago"}">${entry.isPaid ? "↺" : "✓"}</button>`}
-          <button class="action-button" type="button" data-action="edit" data-id="${entry.id}" aria-label="Editar lançamento" title="Editar">✎</button>
-          <button class="action-button" type="button" data-action="duplicate" data-id="${entry.id}" aria-label="Duplicar lançamento" title="Duplicar">⧉</button>
-        </div>
-        <button class="delete-button" type="button" data-action="delete" data-id="${entry.id}" aria-label="Remover lançamento" title="Remover">×</button>
-      </div>
-    `;
-
-    entryList.append(item);
+          <small>${getEntryMetaHtml(entry)}</small>
+        </button>
+        <span class="entry-amount ${entry.type === "income" ? "is-income" : ""}">
+          ${entry.type === "income" ? "+ " : ""}${currency.format(entry.amount)}
+        </span>
+      </li>`;
   });
+
+  entryList.innerHTML = html;
 }
 
-function renderCardSettings() {
-  cardSettingsList.innerHTML = getSortedCardSettings()
-    .map(
-      (card) => `
-        <div class="card-setting-row">
-          <label class="card-setting-preview" style="--card-accent: ${escapeHtml(card.color)}" aria-label="Cor do cartão">
-            <span class="card-chip">${getCardBadgeLabel(card.name)}</span>
-            <input class="card-color-input" data-card-setting="color" data-card-id="${card.id}" type="color" value="${escapeHtml(card.color)}" aria-label="Cor do cartão" />
-          </label>
-          <div class="card-setting-main">
-            <input
-              class="card-name-input"
-              data-card-setting="name"
-              data-card-id="${card.id}"
-              type="text"
-              value="${escapeHtml(card.name)}"
-              placeholder="Nome do cartão"
-              aria-label="Nome do cartão"
-            />
-            <div class="card-setting-meta">
-              <label class="card-close-field">
-                <span>Fecha</span>
-                <input data-card-setting="closingDay" data-card-id="${card.id}" type="number" min="1" max="31" value="${card.closingDay}" />
-              </label>
-              <label class="card-due-field">
-                <span>Vence</span>
-                <input data-card-setting="dueDay" data-card-id="${card.id}" type="number" min="1" max="31" value="${card.dueDay}" />
-              </label>
-              <label class="toggle-label card-active-field">
-                <span>Ativo</span>
-                <input data-card-setting="active" data-card-id="${card.id}" type="checkbox" ${card.active ? "checked" : ""} />
-              </label>
+function renderActiveFilters() {
+  const chips = [];
+
+  if (cardFilter) {
+    chips.push(
+      `<button class="chip is-active" type="button" data-clear="card">${escapeHtml(cardFilter)}<svg class="icon icon-sm"><use href="#i-x" /></svg></button>`,
+    );
+  }
+
+  if (categoryFilter) {
+    chips.push(
+      `<button class="chip is-active" type="button" data-clear="category">${escapeHtml(categoryFilter)}<svg class="icon icon-sm"><use href="#i-x" /></svg></button>`,
+    );
+  }
+
+  activeFilters.innerHTML = chips.join("");
+  activeFilters.hidden = !chips.length;
+}
+
+function renderCards(monthEntries) {
+  const creditEntries = monthEntries.filter((entry) => entry.type === "credit");
+  const cards = getSortedCardSettings();
+
+  if (!cards.length) {
+    cardList.innerHTML = `<p class="empty">Cadastre seus cartões com o dia de fechamento e de vencimento para o app calcular cada fatura.</p>`;
+    return;
+  }
+
+  cardList.innerHTML = cards
+    .map((card) => {
+      const cardEntries = creditEntries.filter((entry) => entry.cardName === card.name);
+      const total = cardEntries.reduce((sum, entry) => sum + Number(entry.amount), 0);
+      const unpaidCount = cardEntries.filter((entry) => !entry.isPaid).length;
+      const status = !cardEntries.length
+        ? `<span class="pill pill-muted">Sem compras</span>`
+        : unpaidCount
+          ? `<button class="pill" type="button" data-action="pay-card" data-card="${escapeHtml(card.name)}">Pagar fatura</button>`
+          : `<button class="pill pill-paid" type="button" data-action="unpay-card" data-card="${escapeHtml(card.name)}">Paga</button>`;
+
+      return `
+        <article class="credit-card ${card.active ? "" : "is-inactive"}" style="--card: ${escapeHtml(card.color)}">
+          <div class="credit-card-top">
+            <div>
+              <h3>${escapeHtml(card.name)}</h3>
+              <p>Fecha dia ${card.closingDay} · vence dia ${card.dueDay}${card.active ? "" : " · fora de uso"}</p>
+            </div>
+            <button class="button button-ghost button-small" type="button" data-action="edit-card" data-card-id="${card.id}">Editar</button>
+          </div>
+          <div class="credit-card-bottom">
+            <div>
+              <small>${capitalize(getMonthName(monthInput.value))}</small>
+              <strong>${currency.format(total)}</strong>
+            </div>
+            <div class="credit-card-actions">
+              ${cardEntries.length ? `<button class="link-button" type="button" data-action="card-entries" data-card="${escapeHtml(card.name)}">Ver compras</button>` : ""}
+              ${status}
             </div>
           </div>
-          <details class="card-actions-menu">
-            <summary class="tiny-button card-actions-trigger" aria-label="Ações do cartão">•••</summary>
-            <div class="card-actions-popover">
-              <button class="tiny-button danger-button" type="button" data-remove-card="${card.id}">Remover</button>
-            </div>
-          </details>
-        </div>
-      `,
-    )
+        </article>`;
+    })
     .join("");
+}
+
+function getCheckButton(entry) {
+  if (entry.type === "income") {
+    return `<span class="check check-income" aria-hidden="true"><svg class="icon icon-sm"><use href="#i-in" /></svg></span>`;
+  }
+
+  const label = entry.isPaid ? "Desfazer pagamento" : "Marcar como pago";
+
+  return `
+    <button class="check ${entry.isPaid ? "is-checked" : ""}" type="button" data-action="paid" data-id="${entry.id}" data-paid-key="${entry.paidKey}" aria-label="${label}: ${escapeHtml(entry.description)}" title="${label}">
+      <svg class="icon icon-sm"><use href="#i-check" /></svg>
+    </button>`;
+}
+
+function getEntryMeta(entry) {
+  const parts = [entry.type === "credit" ? entry.cardName || "Cartão" : typeLabels[entry.type]];
+
+  if (entry.category) {
+    parts.push(entry.category);
+  }
+
+  if (entry.repeat === "installment") {
+    parts.push(`${entry.installmentNumber}/${entry.installments}`);
+  } else if (entry.repeat === "fixed") {
+    parts.push("todo mês");
+  }
+
+  return parts.join(" · ");
+}
+
+function getEntryMetaHtml(entry) {
+  const meta = escapeHtml(getEntryMeta(entry));
+
+  if (entry.type !== "credit") {
+    return meta;
+  }
+
+  const card = getCardConfig(entry.cardName || "Cartão não informado");
+
+  return `<span class="dot" style="--dot: ${escapeHtml(card.color)}"></span>${meta}`;
 }
 
 function renderDatalists() {
   const categories = [
     ...new Set([...defaultCategories, ...entries.map((entry) => entry.category).filter(Boolean)]),
-  ].sort();
-  const activeCardNames = getSortedCardSettings()
-    .filter((card) => card.active)
-    .map((card) => card.name)
-    .filter(Boolean);
-  const unknownEntryCards = entries
-    .map((entry) => entry.cardName)
-    .filter((cardName) => cardName && !cardSettings.some((card) => card.name === cardName));
-  const cards = [...new Set([...activeCardNames, ...unknownEntryCards])];
+  ].sort((a, b) => a.localeCompare(b, "pt-BR"));
 
   categoryOptions.innerHTML = categories
     .map((category) => `<option value="${escapeHtml(category)}"></option>`)
     .join("");
-  cardOptions.innerHTML = cards
-    .map((card) => `<option value="${escapeHtml(card)}"></option>`)
-    .join("");
+}
+
+function getRadioValue(container, name) {
+  return container.querySelector(`input[name="${name}"]:checked`)?.value || "";
+}
+
+function setRadioValue(container, name, value) {
+  container.querySelectorAll(`input[name="${name}"]`).forEach((input) => {
+    input.checked = input.value === value;
+  });
+}
+
+function getToday() {
+  const now = new Date();
+  return `${getCurrentMonth()}-${String(now.getDate()).padStart(2, "0")}`;
+}
+
+function getMonthName(month) {
+  const [year, monthNumber] = month.split("-").map(Number);
+  const name = new Date(year, monthNumber - 1, 1).toLocaleDateString("pt-BR", { month: "long" });
+
+  return year === new Date().getFullYear() ? name : `${name} de ${year}`;
+}
+
+function formatShortDate(date) {
+  const [, month, day] = date.split("-");
+  return `${day}/${month}`;
+}
+
+function formatLongDate(date) {
+  const [year, month, day] = date.split("-").map(Number);
+  const label = new Date(year, month - 1, day).toLocaleDateString("pt-BR", {
+    weekday: "short",
+    day: "2-digit",
+    month: "short",
+  });
+
+  return capitalize(label.replaceAll(".", ""));
+}
+
+function capitalize(text) {
+  return text ? text[0].toUpperCase() + text.slice(1) : text;
 }
 
 function downloadBackup() {
@@ -787,7 +1257,7 @@ function exportMonthPdf() {
   const reportWindow = window.open("", "_blank");
 
   if (!reportWindow) {
-    alert("Não consegui abrir a janela do relatório. Verifique se o navegador bloqueou pop-ups.");
+    showToast("O navegador bloqueou a janela do relatório. Libere pop-ups para este site.");
     return;
   }
 
@@ -944,7 +1414,9 @@ function getVisibleEntries(monthEntries) {
   let visibleEntries =
     activeFilter === "all"
       ? [...monthEntries]
-      : monthEntries.filter((entry) => entry.type === activeFilter);
+      : activeFilter === "pending"
+        ? monthEntries.filter((entry) => entry.type !== "income" && !entry.isPaid)
+        : monthEntries.filter((entry) => entry.type === activeFilter);
 
   if (cardFilter) {
     visibleEntries = visibleEntries.filter(
@@ -1085,7 +1557,7 @@ function getCardName(formData) {
     return "";
   }
 
-  return formData.get("cardName").trim() || "Cartão não informado";
+  return String(formData.get("cardName") || "").trim() || "Cartão não informado";
 }
 
 function getNextMonthAfterCardDue(entry) {
@@ -1174,10 +1646,14 @@ async function setEntriesPaidState({ targetName, shouldPay, entryFilter, confirm
     return;
   }
 
-  const actionLabel = shouldPay ? "marcar como pagos" : "desfazer o pagamento de";
-  const confirmed = confirm(
-    `Deseja ${actionLabel} ${targetEntries.length} lançamento${targetEntries.length === 1 ? "" : "s"} ${confirmLabel}?`,
-  );
+  const count = `${targetEntries.length} lançamento${targetEntries.length === 1 ? "" : "s"}`;
+  const confirmed = await askConfirm({
+    title: shouldPay ? `Marcar fatura ${confirmLabel} como paga?` : `Desfazer pagamento ${confirmLabel}?`,
+    message: shouldPay
+      ? `${count} de ${getMonthName(monthInput.value)} ficam como pagos.`
+      : `${count} de ${getMonthName(monthInput.value)} voltam para "a pagar".`,
+    confirmLabel: shouldPay ? "Marcar como paga" : "Desfazer",
+  });
 
   if (!confirmed) {
     return;
@@ -1246,21 +1722,23 @@ function startEdit(id) {
 
   const occurrence = getOccurrenceForMonth(entry, monthInput.value)[0];
 
+  resetForm();
   editEntryId = id;
   form.elements.description.value = entry.description;
   form.elements.amount.value = entry.amount;
-  typeSelect.value = entry.type;
-  cardNameInput.value = entry.cardName || "";
+  setRadioValue(form, "type", entry.type);
   form.elements.category.value = entry.category || "";
   form.elements.dueDate.value = entry.dueDate || "";
-  repeatSelect.value = entry.repeat || "once";
+  setRadioValue(form, "repeat", entry.repeat || "once");
   installmentsInput.value = entry.installments || 2;
   currentInstallmentInput.value = occurrence?.installmentNumber || 1;
+  renderCardChoices(entry.cardName || "");
+  entryDialogTitle.textContent = "Editar lançamento";
   submitEntry.textContent = "Salvar";
-  cancelEdit.classList.remove("is-hidden");
   syncCardField();
   syncInstallmentsField();
-  form.scrollIntoView({ behavior: "smooth", block: "start" });
+  updateEntryHint();
+  entryDialog.showModal();
 }
 
 async function duplicateEntry(id) {
@@ -1269,7 +1747,7 @@ async function duplicateEntry(id) {
   const newEntry = {
     ...entry,
     id: crypto.randomUUID(),
-    description: `${entry.description} cópia`,
+    description: `${entry.description} (cópia)`,
     paidMonths: [],
     createdAt: new Date().toISOString(),
   };
@@ -1280,46 +1758,24 @@ async function duplicateEntry(id) {
 function resetForm() {
   editEntryId = null;
   form.reset();
-  typeSelect.value = "income";
-  repeatSelect.value = "once";
+  setRadioValue(form, "type", "credit");
+  setRadioValue(form, "repeat", "once");
   installmentsInput.value = "2";
   currentInstallmentInput.value = "1";
+  entryDialogTitle.textContent = "Novo lançamento";
   submitEntry.textContent = "Adicionar";
-  cancelEdit.classList.add("is-hidden");
+  entryError.hidden = true;
+  renderCardChoices();
   syncInstallmentsField();
   syncCardField();
 }
 
 function clearListFilters() {
-  activeFilter = "all";
+  setFilter("all");
   cardFilter = "";
   categoryFilter = "";
   searchQuery = "";
   searchInput.value = "";
-  filterButtons.forEach((button) =>
-    button.classList.toggle("active", button.dataset.filter === "all"),
-  );
-}
-
-async function addNewCard() {
-  const nextNumber = cardSettings.length + 1;
-
-  cardSettings = [
-    ...cardSettings,
-    {
-      id: crypto.randomUUID(),
-      name: `Novo cartão ${nextNumber}`,
-      closingDay: 25,
-      dueDay: 10,
-      color: cardColorPalette[(nextNumber - 1) % cardColorPalette.length],
-      active: true,
-    },
-  ];
-  const newCard = cardSettings[cardSettings.length - 1];
-  await dbSaveCard(newCard);
-  renderCardSettings();
-  renderDatalists();
-  render();
 }
 
 function getCreditCardTotals(monthEntries) {
@@ -1395,24 +1851,11 @@ function shiftMonth(month, offset) {
 }
 
 function syncInstallmentsField() {
-  const isInstallment = repeatSelect.value === "installment";
-
-  installmentsField.classList.toggle("is-hidden", !isInstallment);
-  currentInstallmentField.classList.toggle("is-hidden", !isInstallment);
-  repeatRow.classList.toggle("single-field", !isInstallment);
-  installmentsInput.required = isInstallment;
-  currentInstallmentInput.required = isInstallment;
+  installmentsRow.hidden = getRadioValue(form, "repeat") !== "installment";
 }
 
 function syncCardField() {
-  const isCredit = typeSelect.value === "credit";
-
-  cardField.classList.toggle("is-hidden", !isCredit);
-  cardNameInput.required = isCredit;
-
-  if (!isCredit) {
-    cardNameInput.value = "";
-  }
+  cardField.hidden = getRadioValue(form, "type") !== "credit";
 }
 
 function getEntryCountText(totalCount, visibleCount) {
@@ -1578,6 +2021,37 @@ async function saveEntries(modifiedEntries = []) {
 
 async function saveCardSettings(modifiedCards = []) {
   await Promise.all(modifiedCards.map((card) => dbSaveCard(card)));
+}
+
+// Usa a tabela category_limits quando ela existe. Na primeira vez, leva para lá
+// os limites que estavam salvos só neste aparelho.
+async function syncCategoryLimits(remoteLimits) {
+  const localLimits = loadCategoryLimits();
+
+  if (remoteLimits === null) {
+    limitsInDatabase = false;
+    return localLimits;
+  }
+
+  limitsInDatabase = true;
+  const missing = Object.entries(localLimits).filter(
+    ([category, amount]) => !(category in remoteLimits) && Number(amount) > 0,
+  );
+
+  if (!missing.length) {
+    localStorage.removeItem(CATEGORY_LIMITS_KEY);
+    return remoteLimits;
+  }
+
+  const results = await Promise.all(
+    missing.map(([category, amount]) => dbSaveCategoryLimit(category, Number(amount))),
+  );
+
+  if (results.every(Boolean)) {
+    localStorage.removeItem(CATEGORY_LIMITS_KEY);
+  }
+
+  return { ...Object.fromEntries(missing.map(([c, a]) => [c, Number(a)])), ...remoteLimits };
 }
 
 function saveCategoryLimits() {
