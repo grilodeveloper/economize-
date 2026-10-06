@@ -169,8 +169,31 @@ input[type="number"] {
   height: 40px;
 }
 
-/* No celular estreito, só a logo cabe ao lado do seletor de mês */
-@media (max-width: 419px) {
+.month-short {
+  display: none;
+}
+
+/* Celular: mês curto para caber logo, nome e seletor na mesma linha */
+@media (max-width: 559px) {
+  .month-long {
+    display: none;
+  }
+
+  .month-short {
+    display: inline;
+  }
+
+  .month-label {
+    min-width: 6.4em;
+  }
+
+  .month-switch .icon-button {
+    width: 34px;
+  }
+}
+
+/* Telas muito estreitas: só a logo */
+@media (max-width: 339px) {
   .topbar .brand-name {
     position: absolute;
     width: 1px;
@@ -957,7 +980,10 @@ input[type="number"] {
 }
 
 .credit-card-bottom {
-  align-items: flex-end;
+  display: grid;
+  justify-content: stretch;
+  align-items: stretch;
+  gap: 14px;
 }
 
 .credit-card h3 {
@@ -985,7 +1011,12 @@ input[type="number"] {
 .credit-card-actions {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 14px;
+}
+
+.credit-card-actions .pill {
+  margin-left: auto;
 }
 
 .credit-card-actions .link-button {

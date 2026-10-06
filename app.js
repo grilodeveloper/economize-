@@ -980,7 +980,9 @@ function render() {
   const monthBalance = income - totalSpent;
   const percent = income > 0 ? Math.min((totalSpent / income) * 100, 100) : 0;
 
-  monthLabel.textContent = capitalize(getMonthLabel(monthInput.value));
+  monthLabel.innerHTML = `
+    <span class="month-long">${capitalize(getMonthLabel(monthInput.value))}</span>
+    <span class="month-short">${getShortMonthLabel(monthInput.value)}</span>`;
   pdfMonthLabel.textContent = capitalize(getMonthLabel(monthInput.value));
 
   balance.textContent = currency.format(monthBalance);
@@ -1367,6 +1369,21 @@ function getMonthName(month) {
   const name = new Date(year, monthNumber - 1, 1).toLocaleDateString("pt-BR", { month: "long" });
 
   return year === new Date().getFullYear() ? name : `${name} de ${year}`;
+}
+
+// Cabeçalho no celular: "Outubro" no ano atual, "Fev 2027" nos outros
+function getShortMonthLabel(month) {
+  const [year, monthNumber] = month.split("-").map(Number);
+
+  if (year === new Date().getFullYear()) {
+    return capitalize(getMonthName(month));
+  }
+
+  const short = new Date(year, monthNumber - 1, 1)
+    .toLocaleDateString("pt-BR", { month: "short" })
+    .replace(".", "");
+
+  return `${capitalize(short)} ${year}`;
 }
 
 function formatShortDate(date) {
