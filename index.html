@@ -135,7 +135,7 @@
 
           <section class="block">
             <div class="block-head">
-              <h2>Faturas do mês</h2>
+              <h2 id="invoicesTitle">Faturas do mês</h2>
               <span id="creditTotal" class="block-meta"></span>
             </div>
             <ul id="invoiceList" class="rows"></ul>
@@ -151,8 +151,8 @@
 
           <section class="block">
             <div class="block-head">
-              <h2>Onde o dinheiro foi</h2>
-              <span class="block-meta">Toque para definir um limite</span>
+              <h2 id="categoriesTitle">Gastos do mês</h2>
+              <span id="categoriesMeta" class="block-meta"></span>
             </div>
             <ul id="categoryList" class="rows"></ul>
             <button id="toggleCategories" class="link-button" type="button" hidden></button>
@@ -387,14 +387,6 @@
             <span>Dia do vencimento</span>
             <input id="cardDueInput" name="dueDay" type="number" inputmode="numeric" min="1" max="31" required />
           </label>
-        </div>
-        <div class="field">
-          <span class="field-label">As compras contam no mês</span>
-          <div class="segmented" role="radiogroup" aria-label="Mês em que as compras contam">
-            <label><input type="radio" name="invoiceOffset" value="0" /><span>Do vencimento</span></label>
-            <label><input type="radio" name="invoiceOffset" value="1" /><span>Antes do vencimento</span></label>
-          </div>
-          <small id="invoiceOffsetHint" class="field-help"></small>
         </div>
         <label class="switch">
           <input id="cardActiveInput" name="active" type="checkbox" />

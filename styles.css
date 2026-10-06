@@ -1024,6 +1024,37 @@ input[type="number"] {
   white-space: nowrap;
 }
 
+.credit-card-next {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  margin-top: -4px;
+  padding: 12px 0 0;
+  border: 0;
+  border-top: 1px solid color-mix(in srgb, var(--card) 30%, var(--line));
+  background: none;
+  text-align: left;
+}
+
+.credit-card-next > span:first-child {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.credit-card-next-title {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.credit-card-next-value {
+  flex: none;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
 /* ---------- Ajustes ---------- */
 
 .segmented {
@@ -1116,11 +1147,6 @@ input[type="number"] {
 .field input[type="color"] {
   padding: 4px;
   cursor: pointer;
-}
-
-.field-help {
-  color: var(--muted);
-  font-size: 13px;
 }
 
 .field-row {

@@ -6,28 +6,40 @@ Roda direto no navegador, sem build e sem dependências para instalar. Os dados 
 
 ## Funcionalidades
 
+### Duas visões do mesmo mês
+
+O app separa duas perguntas que costumam se misturar quando se usa cartão de crédito:
+
+| Pergunta | Visão | Onde aparece |
+| --- | --- | --- |
+| Quanto sai da conta em outubro? | **Caixa**: faturas que vencem em outubro (compras de setembro), contas e gastos do mês | Sobra prevista, meta de economia, faturas do mês |
+| Quanto gastamos em outubro? | **Gastos**: tudo que foi comprado em outubro, mesmo que a fatura vença em novembro | Lista de lançamentos, categorias e limites |
+
+Parcelas contam uma por mês: na visão de gastos, a partir do mês da compra; na de caixa, a partir do vencimento da primeira fatura.
+
 ### Mês
-- **Sobra prevista**: entradas menos saídas do mês, com o quanto das entradas já tem destino.
+- **Sobra prevista**: entradas menos o que sai da conta no mês, com o quanto das entradas já tem destino.
 - **Meta de economia**: valor para guardar todo mês, com um motivo opcional ("Reserva de emergência"). Mostra se a meta cabe no mês e quanto ainda fica livre para gastar.
-- **Faturas do mês**: total de cada cartão, com o dia de vencimento e o botão para marcar a fatura inteira como paga.
+- **Faturas que vencem no mês**: total de cada cartão, com a data de vencimento, até quando as compras entram e o botão para marcar a fatura inteira como paga.
 - **Próximas contas**: contas e gastos ainda não pagos, em ordem de vencimento.
-- **Categorias**: para onde o dinheiro foi, com limite mensal opcional por categoria.
-- Comparação com os gastos do mês anterior.
+- **Gastos do mês**: o que foi comprado no mês, por categoria, com limite mensal opcional.
+- Comparação com as saídas do mês anterior.
 
 ### Lançamentos
 - Quatro tipos: **entrada**, **conta**, **gasto** e **cartão**.
 - Recorrência: **só uma vez**, **todo mês** ou **parcelado** (com parcela atual e total).
 - Marcação de pago por ocorrência: pagar a parcela de outubro não marca a de novembro.
-- Busca e filtros por tipo, por "a pagar", por cartão e por categoria.
+- Lista pela data da compra; compras no cartão mostram quando a fatura vence.
+- Busca e filtros por tipo, por "a pagar", por cartão, por categoria e por fatura.
 - Editar, duplicar e excluir.
 - Aviso antes de salvar um gasto que deixa o mês abaixo da meta de economia.
 
 ### Cartões de crédito
 - Cada cartão tem dia de fechamento, dia de vencimento e cor.
-- **A compra conta no mês em que a fatura vence**, e não no mês em que foi feita. Uma compra no dia 6 num cartão que fecha no dia 28 e vence no dia 5 aparece no mês seguinte, quando o dinheiro de fato sai da conta.
-- Cada cartão pode contar as compras no **mês anterior ao vencimento**, para bancos que chamam de "fatura de outubro" a que fica aberta em outubro e vence no começo de novembro.
+- Faturas identificadas pela **data de vencimento** e pelo período de compras ("vence 09/11 · compras de 03/10 a 02/11"), sem depender de como cada banco dá nome à fatura.
+- Cada cartão mostra a fatura que vence no mês (com o botão de pagar) e a **próxima fatura**, que ainda está juntando compras.
 - O formulário mostra em qual fatura a compra vai cair antes de salvar.
-- Ao mudar o fechamento, o vencimento ou o mês de contagem de um cartão, as marcações de "pago" acompanham as compras.
+- Ao mudar o fechamento ou o vencimento de um cartão, as marcações de "pago" acompanham as compras.
 - Cartões podem ser marcados como "fora de uso": o histórico fica e eles somem do formulário.
 
 ### Ajustes
@@ -60,7 +72,7 @@ O layout é pensado primeiro para o celular: no celular, as abas ficam numa barr
 ├── manifest.webmanifest  # Dados para instalar como app no celular (PWA)
 ├── icons/            # Logo em SVG e ícones PNG (192, 512, maskable, Apple, favicon)
 └── supabase/
-    ├── cards_invoice_offset.sql  # Coluna do mês em que as compras de cada cartão contam
+    ├── cards_invoice_offset.sql  # Coluna invoice_offset (em desuso, mantida por compatibilidade)
     ├── category_limits.sql   # Tabela de limites por categoria
     └── user_settings.sql     # Tabela da meta de economia
 ```
@@ -107,7 +119,7 @@ Todas as tabelas têm a coluna `user_id` e usam Row Level Security: cada login s
 
 **`entries`**: `id`, `user_id`, `description`, `amount`, `type` (`income`, `bill`, `expense` ou `credit`), `category`, `due_date`, `start_month` (`AAAA-MM`), `repeat` (`once`, `fixed` ou `installment`), `installments`, `card_name`, `paid_months` (array de texto) e `created_at`.
 
-**`cards`**: `id`, `user_id`, `name`, `closing_day`, `due_day`, `color`, `active`, `invoice_offset` (`0` = conta no mês do vencimento, `1` = no mês anterior, criada por [`supabase/cards_invoice_offset.sql`](supabase/cards_invoice_offset.sql)) e `created_at`.
+**`cards`**: `id`, `user_id`, `name`, `closing_day`, `due_day`, `color`, `active`, `invoice_offset` (em desuso: o app sempre grava `0`; criada por [`supabase/cards_invoice_offset.sql`](supabase/cards_invoice_offset.sql)) e `created_at`.
 
 ### Como os pagamentos são guardados
 

@@ -132,7 +132,10 @@ let searchQuery = "";
 let editEntryId = null;
 let categoryFilter = "";
 let cardFilter = "";
+let invoiceFilter = null; // { card, month }: lista as compras de uma fatura
 let showAllCategories = false;
+// Ocorrências desenhadas na tela, para abrir o diálogo de ações da linha certa
+const renderedOccurrences = new Map();
 let actionTarget = null;
 let editingCardId = null;
 let limitCategory = "";
@@ -163,6 +166,7 @@ async function initApp() {
   categoryLimits = await syncCategoryLimits(loadedLimits);
   settings = await syncSettings(loadedSettings);
   await migrateCreditPaidKeys();
+  await resetInvoiceOffsets();
 
   entryList.removeAttribute("aria-busy");
   renderDatalists();
@@ -200,15 +204,14 @@ function goTo(view) {
 
 window.addEventListener("hashchange", () => setView(getViewFromHash()));
 
-prevMonth.addEventListener("click", () => {
-  monthInput.value = shiftMonth(monthInput.value, -1);
-  render();
-});
+prevMonth.addEventListener("click", () => setMonth(shiftMonth(monthInput.value, -1)));
+nextMonth.addEventListener("click", () => setMonth(shiftMonth(monthInput.value, 1)));
 
-nextMonth.addEventListener("click", () => {
-  monthInput.value = shiftMonth(monthInput.value, 1);
+function setMonth(month) {
+  monthInput.value = month;
+  invoiceFilter = null;
   render();
-});
+}
 
 monthInput.addEventListener("click", () => {
   try {
@@ -219,10 +222,7 @@ monthInput.addEventListener("click", () => {
 });
 
 monthInput.addEventListener("change", () => {
-  if (!monthInput.value) {
-    monthInput.value = getCurrentMonth();
-  }
-  render();
+  setMonth(monthInput.value || getCurrentMonth());
 });
 
 /* ---------- Diálogos genéricos ---------- */
@@ -366,24 +366,21 @@ form.addEventListener("submit", async (event) => {
     clearListFilters();
     showToast("Alterações salvas");
   } else {
-    const referenceMonth = entry.dueDate ? entry.dueDate.slice(0, 7) : monthInput.value;
-    const targetMonth = shiftMonth(referenceMonth, getCreditMonthShift(entry));
+    // A lista mostra o mês da compra; para cartão, avisa quando a fatura vence
+    const purchaseMonth = entry.dueDate ? entry.dueDate.slice(0, 7) : monthInput.value;
+    const dueDate =
+      entry.type === "credit" && entry.dueDate
+        ? getCardDueDate(entry.cardName, shiftMonth(purchaseMonth, getCreditMonthShift(entry)))
+        : "";
+    const dueText = dueDate ? ` Fatura vence em ${formatShortDate(dueDate)}.` : "";
 
-    if (targetMonth !== monthInput.value) {
-      showToast(
-        entry.type === "credit"
-          ? `Entrou na fatura de ${getMonthName(targetMonth)}`
-          : `Adicionado em ${getMonthName(targetMonth)}`,
-        {
-          label: "Ver",
-          onClick: () => {
-            monthInput.value = targetMonth;
-            render();
-          },
-        },
-      );
+    if (purchaseMonth !== monthInput.value) {
+      showToast(`Adicionado em ${getMonthName(purchaseMonth)}.${dueText}`, {
+        label: "Ver",
+        onClick: () => setMonth(purchaseMonth),
+      });
     } else {
-      showToast("Lançamento adicionado");
+      showToast(`Lançamento adicionado.${dueText}`);
     }
   }
 
@@ -463,13 +460,11 @@ function updateEntryHint() {
 
   if (type === "credit" && cardName && date) {
     const card = getCardConfig(cardName);
-    const purchase = { type: "credit", cardName, dueDate: date };
-    const dueMonth = shiftMonth(date.slice(0, 7), getDueMonthShift(purchase, card));
-    const countMonth = shiftMonth(date.slice(0, 7), getCreditMonthShift(purchase, card));
-    hints.push(
-      `Vai para a fatura do ${cardName} que vence em ${card.dueDay} de ${getMonthName(dueMonth)}` +
-        (countMonth !== dueMonth ? ` e conta em ${getMonthName(countMonth)}.` : "."),
+    const dueMonth = shiftMonth(
+      date.slice(0, 7),
+      getCreditMonthShift({ type: "credit", cardName, dueDate: date }, card),
     );
+    hints.push(`Vai para a fatura do ${cardName} que vence em ${card.dueDay} de ${getMonthName(dueMonth)}.`);
   }
 
   entryHint.textContent = hints.join(" ");
@@ -572,6 +567,8 @@ activeFilters.addEventListener("click", (event) => {
 
   if (button.dataset.clear === "card") {
     cardFilter = "";
+  } else if (button.dataset.clear === "invoice") {
+    invoiceFilter = null;
   } else {
     categoryFilter = "";
   }
@@ -593,19 +590,20 @@ document.querySelector(".views").addEventListener("click", async (event) => {
   }
 
   if (actionName === "open") {
-    openActionDialog(id);
+    openActionDialog(`${id}|${paidKey}`);
   }
 
   if (actionName === "pay-card") {
-    await markCardEntriesAsPaid(action.dataset.card);
+    await markCardEntriesAsPaid(action.dataset.card, action.dataset.month);
   }
 
   if (actionName === "unpay-card") {
-    await markCardEntriesAsUnpaid(action.dataset.card);
+    await markCardEntriesAsUnpaid(action.dataset.card, action.dataset.month);
   }
 
-  if (actionName === "card-entries") {
-    cardFilter = action.dataset.card;
+  if (actionName === "invoice-entries") {
+    invoiceFilter = { card: action.dataset.card, month: action.dataset.month };
+    cardFilter = "";
     categoryFilter = "";
     setFilter("all");
     render();
@@ -631,9 +629,8 @@ async function togglePaid(id, paidKey) {
   await dbSaveEntry(entries.find((entry) => entry.id === id));
 }
 
-function openActionDialog(id) {
-  const entry = entries.find((item) => item.id === id);
-  const occurrence = entry && getOccurrenceForMonth(entry, monthInput.value)[0];
+function openActionDialog(key) {
+  const occurrence = renderedOccurrences.get(key);
 
   if (!occurrence) {
     return;
@@ -705,7 +702,8 @@ toggleCategories.addEventListener("click", () => {
 });
 
 function openLimitDialog(category) {
-  const total = getCategoryTotals(getMonthEntries()).find(([name]) => name === category)?.[1] || 0;
+  const total =
+    getCategoryTotals(getMonthEntries("spending")).find(([name]) => name === category)?.[1] || 0;
   const limit = categoryLimits[category];
 
   limitCategory = category;
@@ -755,6 +753,7 @@ document.querySelector("#showCategoryEntries").addEventListener("click", () => {
   limitDialog.close();
   categoryFilter = limitCategory;
   cardFilter = "";
+  invoiceFilter = null;
   setFilter("all");
   render();
   goTo("lancamentos");
@@ -778,24 +777,9 @@ function openCardDialog(cardId) {
   document.querySelector("#cardClosingInput").value = card ? card.closingDay : 25;
   document.querySelector("#cardDueInput").value = card ? card.dueDay : 5;
   document.querySelector("#cardActiveInput").checked = card ? card.active : true;
-  setRadioValue(cardForm, "invoiceOffset", String(card?.invoiceOffset || 0));
   document.querySelector("#removeCard").hidden = !card;
-  updateInvoiceOffsetHint();
   cardDialog.showModal();
 }
-
-function updateInvoiceOffsetHint() {
-  const dueDay = clampDay(document.querySelector("#cardDueInput").value);
-  const offset = Number(getRadioValue(cardForm, "invoiceOffset")) || 0;
-  const dueMonth = shiftMonth(monthInput.value, 1);
-  const countMonth = shiftMonth(dueMonth, -offset);
-
-  document.querySelector("#invoiceOffsetHint").textContent =
-    `A fatura que vence em ${dueDay} de ${getMonthName(dueMonth)} conta em ${getMonthName(countMonth)}.`;
-}
-
-cardForm.addEventListener("input", updateInvoiceOffsetHint);
-cardForm.addEventListener("change", updateInvoiceOffsetHint);
 
 cardForm.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -820,7 +804,7 @@ cardForm.addEventListener("submit", async (event) => {
     closingDay: clampDay(document.querySelector("#cardClosingInput").value),
     dueDay: clampDay(document.querySelector("#cardDueInput").value),
     active: document.querySelector("#cardActiveInput").checked,
-    invoiceOffset: Number(getRadioValue(cardForm, "invoiceOffset")) === 1 ? 1 : 0,
+    invoiceOffset: 0,
   };
 
   cardSettings = previous
@@ -852,11 +836,7 @@ cardForm.addEventListener("submit", async (event) => {
   await saveEntries(entries.filter((entry) => changedIds.has(entry.id)));
 
   if (!saved) {
-    showToast(
-      card.invoiceOffset
-        ? "Não consegui salvar o cartão. Rode o SQL cards_invoice_offset.sql no Supabase e tente de novo."
-        : "Não consegui salvar o cartão. Confira a conexão e tente de novo.",
-    );
+    showToast("Não consegui salvar o cartão. Confira a conexão e tente de novo.");
     return;
   }
 
@@ -974,7 +954,8 @@ function syncThemeRadios() {
 
 clearMonth.addEventListener("click", async () => {
   const removableEntries = entries.filter(
-    (entry) => entry.repeat === "once" && getOccurrenceForMonth(entry, monthInput.value).length,
+    (entry) =>
+      entry.repeat === "once" && getOccurrenceForMonth(entry, monthInput.value, "spending").length,
   );
 
   if (!removableEntries.length) {
@@ -1002,8 +983,13 @@ clearMonth.addEventListener("click", async () => {
 
 /* ---------- Renderização ---------- */
 
+// Duas visões do mesmo mês:
+// - "cash": o que sai da conta no mês (faturas que vencem nele, contas, entradas)
+// - "spending": o que foi comprado no mês (cartão pela data da compra)
 function render() {
-  const monthEntries = getMonthEntries();
+  renderedOccurrences.clear();
+  const monthEntries = getMonthEntries("cash");
+  const spendingEntries = getMonthEntries("spending");
   const income = sumByType(monthEntries, "income");
   const totalSpent = getTotalSpent(monthEntries);
   const paidTotal = monthEntries
@@ -1035,8 +1021,8 @@ function render() {
   renderComparison(monthEntries);
   renderInvoices(monthEntries);
   renderUpcoming(monthEntries);
-  renderCategories(monthEntries);
-  renderEntries(monthEntries);
+  renderCategories(spendingEntries);
+  renderEntries(spendingEntries);
   renderCards(monthEntries);
 }
 
@@ -1101,19 +1087,21 @@ function renderComparison(monthEntries) {
 
   comparison.textContent =
     spentDiff === 0
-      ? `Mesmo gasto de ${previousName}`
-      : `Gastos ${currency.format(Math.abs(spentDiff))} ${spentDiff > 0 ? "acima" : "abaixo"} de ${previousName}`;
+      ? `Mesmas saídas de ${previousName}`
+      : `Saídas ${currency.format(Math.abs(spentDiff))} ${spentDiff > 0 ? "acima" : "abaixo"} de ${previousName}`;
   comparison.dataset.trend = spentDiff > 0 ? "up" : "down";
 }
 
 function renderInvoices(monthEntries) {
   const cards = getCreditCardTotals(monthEntries);
   const creditEntries = monthEntries.filter((entry) => entry.type === "credit");
+  const month = monthInput.value;
 
+  document.querySelector("#invoicesTitle").textContent = `Faturas que vencem em ${getMonthName(month)}`;
   creditTotal.textContent = cards.length ? currency.format(sumByType(monthEntries, "credit")) : "";
 
   if (!cards.length) {
-    invoiceList.innerHTML = `<li class="empty">Nenhuma compra no cartão em ${getMonthName(monthInput.value)}.</li>`;
+    invoiceList.innerHTML = `<li class="empty">Nenhuma fatura vence em ${getMonthName(month)}.</li>`;
     return;
   }
 
@@ -1123,24 +1111,28 @@ function renderInvoices(monthEntries) {
       const cardEntries = creditEntries.filter(
         (entry) => (entry.cardName || "Cartão não informado") === cardName,
       );
-      const unpaidCount = cardEntries.filter((entry) => !entry.isPaid).length;
-      const isPaid = unpaidCount === 0;
+      const period = getInvoicePeriod(card, month);
+      const isPaid = cardEntries.every((entry) => entry.isPaid);
 
       return `
         <li class="row">
-          <button class="row-main row-link" type="button" data-action="card-entries" data-card="${escapeHtml(cardName)}">
+          <button class="row-main row-link" type="button" data-action="invoice-entries" data-card="${escapeHtml(cardName)}" data-month="${month}">
             <strong><span class="dot" style="--dot: ${escapeHtml(card.color)}"></span>${escapeHtml(cardName)}</strong>
-            <small>Vence ${card.invoiceOffset ? formatShortDate(getCardDueDate(cardName, monthInput.value)) : `dia ${card.dueDay}`} · ${cardEntries.length} compra${cardEntries.length === 1 ? "" : "s"}</small>
+            <small>Vence ${formatShortDate(getCardDueDate(cardName, month))} · compras até ${formatShortDate(period.end)}</small>
           </button>
           <span class="row-value">${currency.format(total)}</span>
-          ${
-            isPaid
-              ? `<button class="pill pill-paid" type="button" data-action="unpay-card" data-card="${escapeHtml(cardName)}" title="Desfazer pagamento">Paga</button>`
-              : `<button class="pill" type="button" data-action="pay-card" data-card="${escapeHtml(cardName)}">Pagar</button>`
-          }
+          ${getPayInvoiceButton(cardName, month, isPaid, "Pagar")}
         </li>`;
     })
     .join("");
+}
+
+function getPayInvoiceButton(cardName, month, isPaid, label) {
+  const data = `data-card="${escapeHtml(cardName)}" data-month="${month}"`;
+
+  return isPaid
+    ? `<button class="pill pill-paid" type="button" data-action="unpay-card" ${data} title="Desfazer pagamento">Paga</button>`
+    : `<button class="pill" type="button" data-action="pay-card" ${data}>${label}</button>`;
 }
 
 function renderUpcoming(monthEntries) {
@@ -1162,7 +1154,7 @@ function renderUpcoming(monthEntries) {
       (entry) => `
         <li class="row">
           ${getCheckButton(entry)}
-          <button class="row-main row-link" type="button" data-action="open" data-id="${entry.id}">
+          <button class="row-main row-link" type="button" ${getOpenAttributes(entry)}>
             <strong>${escapeHtml(entry.description)}</strong>
             <small>${entry.occurrenceDate ? `Vence ${formatShortDate(entry.occurrenceDate)}` : "Sem data"}${entry.category ? ` · ${escapeHtml(entry.category)}` : ""}</small>
           </button>
@@ -1178,6 +1170,12 @@ function renderUpcoming(monthEntries) {
 
 function renderCategories(monthEntries) {
   const categories = getCategoryTotals(monthEntries);
+  const totalSpent = categories.reduce((sum, [, total]) => sum + total, 0);
+
+  document.querySelector("#categoriesTitle").textContent = `Gastos de ${getMonthName(monthInput.value)}`;
+  document.querySelector("#categoriesMeta").textContent = totalSpent
+    ? `${currency.format(totalSpent)} comprados no mês`
+    : "";
 
   if (!categories.length) {
     categoryList.innerHTML = `<li class="empty">Os gastos do mês aparecem aqui, separados por categoria.</li>`;
@@ -1217,14 +1215,23 @@ function renderCategories(monthEntries) {
     : `Ver todas as ${categories.length} categorias`;
 }
 
-function renderEntries(monthEntries) {
+function renderEntries(spendingEntries) {
+  // Com filtro de fatura, a lista mostra as compras daquela fatura (que podem ser de outro mês)
+  const monthEntries = invoiceFilter
+    ? getEntriesForMonth(invoiceFilter.month, "cash").filter(
+        (entry) => entry.type === "credit" && entry.cardName === invoiceFilter.card,
+      )
+    : spendingEntries;
+
   if (cardFilter && !monthEntries.some((entry) => entry.cardName === cardFilter)) {
     cardFilter = "";
   }
 
   const visibleEntries = getVisibleEntries(monthEntries);
   renderActiveFilters();
-  entryCount.textContent = getEntryCountText(monthEntries.length, visibleEntries.length);
+  entryCount.textContent = invoiceFilter
+    ? `${visibleEntries.length} compra${visibleEntries.length === 1 ? "" : "s"} nesta fatura.`
+    : getEntryCountText(monthEntries.length, visibleEntries.length);
 
   if (!visibleEntries.length) {
     entryList.innerHTML = monthEntries.length
@@ -1251,7 +1258,7 @@ function renderEntries(monthEntries) {
     html += `
       <li class="entry ${entry.isPaid ? "is-paid" : ""}">
         ${getCheckButton(entry)}
-        <button class="entry-main" type="button" data-action="open" data-id="${entry.id}">
+        <button class="entry-main" type="button" ${getOpenAttributes(entry)}>
           <strong>${escapeHtml(entry.description)}</strong>
           <small>${getEntryMetaHtml(entry)}</small>
         </button>
@@ -1273,6 +1280,13 @@ function renderActiveFilters() {
     );
   }
 
+  if (invoiceFilter) {
+    const dueDate = getCardDueDate(invoiceFilter.card, invoiceFilter.month);
+    chips.push(
+      `<button class="chip is-active" type="button" data-clear="invoice">Fatura ${escapeHtml(invoiceFilter.card)} · vence ${formatShortDate(dueDate)}<svg class="icon icon-sm"><use href="#i-x" /></svg></button>`,
+    );
+  }
+
   if (categoryFilter) {
     chips.push(
       `<button class="chip is-active" type="button" data-clear="category">${escapeHtml(categoryFilter)}<svg class="icon icon-sm"><use href="#i-x" /></svg></button>`,
@@ -1284,7 +1298,10 @@ function renderActiveFilters() {
 }
 
 function renderCards(monthEntries) {
+  const month = monthInput.value;
+  const nextMonthKey = shiftMonth(month, 1);
   const creditEntries = monthEntries.filter((entry) => entry.type === "credit");
+  const nextEntries = getEntriesForMonth(nextMonthKey, "cash").filter((entry) => entry.type === "credit");
   const cards = getSortedCardSettings();
 
   if (!cards.length) {
@@ -1296,12 +1313,14 @@ function renderCards(monthEntries) {
     .map((card) => {
       const cardEntries = creditEntries.filter((entry) => entry.cardName === card.name);
       const total = cardEntries.reduce((sum, entry) => sum + Number(entry.amount), 0);
-      const unpaidCount = cardEntries.filter((entry) => !entry.isPaid).length;
-      const status = !cardEntries.length
-        ? `<span class="pill pill-muted">Sem compras</span>`
-        : unpaidCount
-          ? `<button class="pill" type="button" data-action="pay-card" data-card="${escapeHtml(card.name)}">Pagar fatura</button>`
-          : `<button class="pill pill-paid" type="button" data-action="unpay-card" data-card="${escapeHtml(card.name)}">Paga</button>`;
+      const period = getInvoicePeriod(card, month);
+      const isPaid = cardEntries.every((entry) => entry.isPaid);
+      const nextCardEntries = nextEntries.filter((entry) => entry.cardName === card.name);
+      const nextTotal = nextCardEntries.reduce((sum, entry) => sum + Number(entry.amount), 0);
+      const nextPeriod = getInvoicePeriod(card, nextMonthKey);
+      const status = cardEntries.length
+        ? getPayInvoiceButton(card.name, month, isPaid, "Pagar fatura")
+        : `<span class="pill pill-muted">Sem compras</span>`;
 
       return `
         <article class="credit-card ${card.active ? "" : "is-inactive"}" style="--card: ${escapeHtml(card.color)}">
@@ -1314,17 +1333,29 @@ function renderCards(monthEntries) {
           </div>
           <div class="credit-card-bottom">
             <div>
-              <small>${capitalize(getMonthName(monthInput.value))}</small>
+              <small>Vence ${formatShortDate(getCardDueDate(card.name, month))} · compras de ${formatShortDate(period.start)} a ${formatShortDate(period.end)}</small>
               <strong>${currency.format(total)}</strong>
             </div>
             <div class="credit-card-actions">
-              ${cardEntries.length ? `<button class="link-button" type="button" data-action="card-entries" data-card="${escapeHtml(card.name)}">Ver compras</button>` : ""}
+              ${cardEntries.length ? `<button class="link-button" type="button" data-action="invoice-entries" data-card="${escapeHtml(card.name)}" data-month="${month}">Ver compras</button>` : ""}
               ${status}
             </div>
           </div>
+          <button class="credit-card-next" type="button" data-action="invoice-entries" data-card="${escapeHtml(card.name)}" data-month="${nextMonthKey}">
+            <span>
+              <span class="credit-card-next-title">Próxima fatura</span>
+              <small>Vence ${formatShortDate(getCardDueDate(card.name, nextMonthKey))} · fecha ${formatShortDate(nextPeriod.end)}</small>
+            </span>
+            <span class="credit-card-next-value">${currency.format(nextTotal)}</span>
+          </button>
         </article>`;
     })
     .join("");
+}
+
+function getOpenAttributes(entry) {
+  renderedOccurrences.set(`${entry.id}|${entry.paidKey}`, entry);
+  return `data-action="open" data-id="${entry.id}" data-paid-key="${entry.paidKey}"`;
 }
 
 function getCheckButton(entry) {
@@ -1353,7 +1384,10 @@ function getEntryMeta(entry) {
     parts.push("todo mês");
   }
 
-  if (entry.purchaseDate) {
+  // Na lista por data da compra, mostra quando paga; na lista de uma fatura, quando comprou
+  if (entry.basis === "spending" && entry.invoiceDueDate) {
+    parts.push(`fatura ${formatShortDate(entry.invoiceDueDate)}`);
+  } else if (entry.basis === "cash" && entry.purchaseDate) {
     parts.push(`compra ${formatShortDate(entry.purchaseDate)}`);
   }
 
@@ -1608,12 +1642,12 @@ function getPdfEntryRow(entry) {
   `;
 }
 
-function getMonthEntries() {
-  return getEntriesForMonth(monthInput.value);
+function getMonthEntries(basis = "cash") {
+  return getEntriesForMonth(monthInput.value, basis);
 }
 
-function getEntriesForMonth(month) {
-  return entries.flatMap((entry) => getOccurrenceForMonth(entry, month));
+function getEntriesForMonth(month, basis = "cash") {
+  return entries.flatMap((entry) => getOccurrenceForMonth(entry, month, basis));
 }
 
 function getVisibleEntries(monthEntries) {
@@ -1667,11 +1701,14 @@ function getTotalSpent(monthEntries) {
   );
 }
 
-function getOccurrenceForMonth(entry, selectedMonth) {
+// basis "cash": compra no cartão aparece no mês em que a fatura vence
+// basis "spending": aparece no mês da compra (parcelas: uma por mês a partir dele)
+// A marcação de pago é sempre do mês em que a fatura vence
+function getOccurrenceForMonth(entry, selectedMonth, basis = "cash") {
   const repeat = entry.repeat || "once";
-  // Compras no cartão contam no mês em que a fatura vence, não no mês da compra
-  const shift = entry.startMonth ? getCreditMonthShift(entry) : 0;
-  const startMonth = shiftMonth(entry.startMonth || entry.month || selectedMonth, shift);
+  const dueShift = entry.startMonth ? getCreditMonthShift(entry) : 0;
+  const viewShift = basis === "cash" ? dueShift : 0;
+  const startMonth = shiftMonth(entry.startMonth || entry.month || selectedMonth, viewShift);
   const monthOffset = getMonthOffset(startMonth, selectedMonth);
 
   if (monthOffset < 0) {
@@ -1687,41 +1724,38 @@ function getOccurrenceForMonth(entry, selectedMonth) {
   }
 
   const isCredit = entry.type === "credit";
-  const monthDate = getOccurrenceDate(entry, shiftMonth(selectedMonth, -shift));
+  const purchaseMonth = shiftMonth(selectedMonth, -viewShift);
+  const cashMonth = shiftMonth(purchaseMonth, dueShift);
+  const monthDate = getOccurrenceDate(entry, purchaseMonth);
   // Parcelado ou à vista: a compra foi uma só; fixo: uma compra por mês
   const purchaseDate =
     repeat === "fixed" || !entry.startMonth ? monthDate : getOccurrenceDate(entry, entry.startMonth);
-  const occurrenceDate = isCredit && entry.dueDate ? getCardDueDate(entry.cardName, selectedMonth) : monthDate;
+  const invoiceDueDate = isCredit && entry.dueDate ? getCardDueDate(entry.cardName, cashMonth) : "";
   const installmentNumber = repeat === "installment" ? monthOffset + 1 : null;
-  const paidKey = getPaidKey(selectedMonth, installmentNumber, repeat);
+  const paidKey = getPaidKey(cashMonth, installmentNumber, repeat);
 
   return [
     {
       ...entry,
+      basis,
       occurrenceMonth: selectedMonth,
-      occurrenceDate,
+      occurrenceDate: basis === "cash" && invoiceDueDate ? invoiceDueDate : monthDate,
       purchaseDate: isCredit ? purchaseDate : "",
+      invoiceDueDate,
       installmentNumber,
       paidKey,
       isPaid: isEntryPaid(entry, paidKey),
-      invoiceMonth: isCredit ? selectedMonth : "",
+      invoiceMonth: isCredit ? cashMonth : "",
     },
   ];
 }
 
 // Quantos meses depois da compra a fatura vence: 0, 1 ou 2
-// Quantos meses depois da compra ela conta: o mês do vencimento da fatura,
-// ou um mês antes, se o cartão estiver configurado assim (invoiceOffset = 1)
 function getCreditMonthShift(entry, card = getCardConfig(entry.cardName || "Cartão não informado")) {
   if (entry.type !== "credit" || !entry.dueDate) {
     return 0;
   }
 
-  return getDueMonthShift(entry, card) - (card.invoiceOffset || 0);
-}
-
-// Quantos meses depois da compra a fatura vence: 0, 1 ou 2
-function getDueMonthShift(entry, card) {
   const day = Number(entry.dueDate.split("-")[2]);
   const closesNextMonth = day > card.closingDay ? 1 : 0;
   const dueAfterClosingMonth = card.dueDay <= card.closingDay ? 1 : 0;
@@ -1729,13 +1763,28 @@ function getDueMonthShift(entry, card) {
   return closesNextMonth + dueAfterClosingMonth;
 }
 
-// Data de vencimento da fatura que conta no mês informado
+// Data de vencimento da fatura que vence no mês informado
 function getCardDueDate(cardName, month) {
   const card = getCardConfig(cardName || "Cartão não informado");
-  const dueMonth = shiftMonth(month, card.invoiceOffset || 0);
-  const day = Math.min(card.dueDay, getLastDayOfMonth(dueMonth));
+  const day = Math.min(card.dueDay, getLastDayOfMonth(month));
 
-  return `${dueMonth}-${String(day).padStart(2, "0")}`;
+  return `${month}-${String(day).padStart(2, "0")}`;
+}
+
+// Período de compras da fatura que vence no mês informado: do dia seguinte
+// ao fechamento anterior até o fechamento
+function getInvoicePeriod(card, dueMonth) {
+  const closingMonth = card.dueDay <= card.closingDay ? shiftMonth(dueMonth, -1) : dueMonth;
+  const previousClosingMonth = shiftMonth(closingMonth, -1);
+  const closingDate = (month) =>
+    `${month}-${String(Math.min(card.closingDay, getLastDayOfMonth(month))).padStart(2, "0")}`;
+  const [year, monthNumber, day] = closingDate(previousClosingMonth).split("-").map(Number);
+  const start = new Date(year, monthNumber - 1, day + 1);
+
+  return {
+    start: `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, "0")}-${String(start.getDate()).padStart(2, "0")}`,
+    end: closingDate(closingMonth),
+  };
 }
 
 // Marcador gravado em paidMonths: as chaves de pago dessa compra já usam o mês da fatura
@@ -1769,6 +1818,35 @@ function shiftPaidKeys(paidMonths, delta) {
 
     return /^\d{4}-\d{2}$/.test(month) ? [shiftMonth(month, delta), ...rest].join("::") : key;
   });
+}
+
+// A opção "contar no mês anterior ao vencimento" foi removida: cartões que a usavam
+// voltam para a regra padrão, e as marcações de pago voltam um mês para frente
+async function resetInvoiceOffsets() {
+  const offsetCards = cardSettings.filter((card) => card.invoiceOffset);
+
+  if (!offsetCards.length) {
+    return;
+  }
+
+  const names = new Set(offsetCards.map((card) => card.name));
+  const moved = [];
+
+  entries = entries.map((entry) => {
+    if (entry.type !== "credit" || !names.has(entry.cardName) || !entry.paidMonths.length) {
+      return entry;
+    }
+
+    const updated = { ...entry, paidMonths: shiftPaidKeys(entry.paidMonths, 1) };
+    moved.push(updated);
+    return updated;
+  });
+
+  cardSettings = cardSettings.map((card) => (card.invoiceOffset ? { ...card, invoiceOffset: 0 } : card));
+  await saveEntries(moved);
+  await Promise.all(
+    cardSettings.filter((card) => names.has(card.name)).map((card) => dbSaveCard(card)),
+  );
 }
 
 function withInvoiceMarker(entry, paidMonths) {
@@ -1877,8 +1955,9 @@ function togglePaidOccurrence(entry, paidKey) {
   };
 }
 
-function markCardEntriesAsPaid(cardName) {
-  setEntriesPaidState({
+function markCardEntriesAsPaid(cardName, month = monthInput.value) {
+  return setEntriesPaidState({
+    month,
     targetName: cardName,
     shouldPay: true,
     entryFilter: (entry) =>
@@ -1887,8 +1966,9 @@ function markCardEntriesAsPaid(cardName) {
   });
 }
 
-function markCardEntriesAsUnpaid(cardName) {
-  setEntriesPaidState({
+function markCardEntriesAsUnpaid(cardName, month = monthInput.value) {
+  return setEntriesPaidState({
+    month,
     targetName: cardName,
     shouldPay: false,
     entryFilter: (entry) =>
@@ -1897,12 +1977,12 @@ function markCardEntriesAsUnpaid(cardName) {
   });
 }
 
-async function setEntriesPaidState({ targetName, shouldPay, entryFilter, confirmLabel }) {
+async function setEntriesPaidState({ month, targetName, shouldPay, entryFilter, confirmLabel }) {
   if (!targetName) {
     return;
   }
 
-  const monthEntries = getMonthEntries();
+  const monthEntries = getEntriesForMonth(month, "cash");
   const targetEntries = monthEntries.filter(
     (entry) => entryFilter(entry) && entry.isPaid !== shouldPay,
   );
@@ -1915,8 +1995,8 @@ async function setEntriesPaidState({ targetName, shouldPay, entryFilter, confirm
   const confirmed = await askConfirm({
     title: shouldPay ? `Marcar fatura ${confirmLabel} como paga?` : `Desfazer pagamento ${confirmLabel}?`,
     message: shouldPay
-      ? `${count} de ${getMonthName(monthInput.value)} ficam como pagos.`
-      : `${count} de ${getMonthName(monthInput.value)} voltam para "a pagar".`,
+      ? `${count} da fatura que vence em ${getMonthName(month)} ficam como pagos.`
+      : `${count} da fatura que vence em ${getMonthName(month)} voltam para "a pagar".`,
     confirmLabel: shouldPay ? "Marcar como paga" : "Desfazer",
   });
 
@@ -2044,6 +2124,7 @@ function resetForm() {
 function clearListFilters() {
   setFilter("all");
   cardFilter = "";
+  invoiceFilter = null;
   categoryFilter = "";
   searchQuery = "";
   searchInput.value = "";
