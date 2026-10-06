@@ -2302,6 +2302,10 @@ function applyTheme(theme) {
   const resolvedTheme = theme === "system" ? (systemTheme.matches ? "dark" : "light") : theme;
 
   document.documentElement.dataset.theme = resolvedTheme;
+  // Cor da barra do sistema no app instalado acompanha o fundo do tema
+  document
+    .querySelector('meta[name="theme-color"]')
+    ?.setAttribute("content", resolvedTheme === "light" ? "#f6f5f1" : "#151514");
 }
 
 function escapeHtml(value) {

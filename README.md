@@ -55,6 +55,8 @@ O layout é pensado primeiro para o celular: no celular, as abas ficam numa barr
 ├── auth.js           # Login, sessão e início do app
 ├── db.js             # Acesso ao Supabase (leitura e escrita das tabelas)
 ├── supabase.js       # URL do projeto e chave pública do Supabase
+├── manifest.webmanifest  # Dados para instalar como app no celular (PWA)
+├── icons/            # Logo em SVG e ícones PNG (192, 512, maskable, Apple, favicon)
 └── supabase/
     ├── category_limits.sql   # Tabela de limites por categoria
     └── user_settings.sql     # Tabela da meta de economia
@@ -81,6 +83,13 @@ python3 -m http.server 8000
 Depois acesse `http://localhost:8000`.
 
 Para publicar, qualquer hospedagem de site estático funciona (GitHub Pages, Netlify, Vercel), sem nenhuma etapa de build.
+
+### 3. Instalar no celular
+
+- **iPhone**: no Safari, toque em Compartilhar → **Adicionar à Tela de Início**.
+- **Android**: no Chrome, toque no menu ⋮ → **Instalar app**.
+
+O app abre em tela cheia, com o ícone do Economize!. Se já houver um atalho antigo, apague-o e instale de novo, porque o celular não atualiza o ícone de um atalho existente.
 
 ## Banco de dados
 
