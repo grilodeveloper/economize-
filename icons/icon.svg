@@ -1,9 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
   <title>Economize!</title>
   <rect width="512" height="512" rx="112" fill="#1A1A18"/>
-  <rect x="140" y="132" width="56" height="248" rx="28" fill="#F6F5F1"/>
-  <rect x="140" y="132" width="232" height="56" rx="28" fill="#F6F5F1"/>
-  <rect x="140" y="228" width="152" height="56" rx="28" fill="#F6F5F1"/>
-  <circle cx="344" cy="256" r="30" fill="#6CC495"/>
-  <rect x="140" y="324" width="232" height="56" rx="28" fill="#F6F5F1"/>
+  <rect x="132" y="132" width="248" height="56" rx="28" fill="#F6F5F1"/>
+  <rect x="132" y="228" width="168" height="56" rx="28" fill="#F6F5F1"/>
+  <circle cx="352" cy="256" r="30" fill="#6CC495"/>
+  <rect x="132" y="324" width="248" height="56" rx="28" fill="#F6F5F1"/>
 </svg>

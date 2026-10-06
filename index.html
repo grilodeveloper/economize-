@@ -35,12 +35,24 @@
         <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></symbol>
         <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12" /></symbol>
         <symbol id="i-in" viewBox="0 0 24 24"><path d="M17 7 7 17M17 17H7V7" /></symbol>
+        <symbol id="logo" viewBox="0 0 512 512">
+          <rect width="512" height="512" rx="112" style="fill: var(--logo-tile)" />
+          <g style="fill: #f6f5f1">
+            <rect x="132" y="132" width="248" height="56" rx="28" />
+            <rect x="132" y="228" width="168" height="56" rx="28" />
+            <rect x="132" y="324" width="248" height="56" rx="28" />
+          </g>
+          <circle cx="352" cy="256" r="30" style="fill: #6cc495" />
+        </symbol>
       </defs>
     </svg>
 
     <section id="loginScreen" class="login" hidden>
       <form id="loginForm" class="login-card" novalidate>
-        <p class="brand">Economize!</p>
+        <p class="brand">
+          <svg class="brand-mark" aria-hidden="true"><use href="#logo" /></svg>
+          <span class="brand-name">Economize!</span>
+        </p>
         <h1>Entrar</h1>
         <label class="field">
           <span>E-mail</span>
@@ -57,7 +69,10 @@
 
     <div id="appShell" class="app" hidden>
       <header class="topbar">
-        <p class="brand">Economize!</p>
+        <p class="brand">
+          <svg class="brand-mark" aria-hidden="true"><use href="#logo" /></svg>
+          <span class="brand-name">Economize!</span>
+        </p>
 
         <div class="month-switch" aria-label="Mês">
           <button id="prevMonth" class="icon-button" type="button" aria-label="Mês anterior">

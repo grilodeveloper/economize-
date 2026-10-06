@@ -17,6 +17,7 @@
   --ink-text: #151514;
   --positive: #6cc495;
   --positive-soft: rgba(108, 196, 149, 0.14);
+  --logo-tile: #2e2d2a;
   --danger: #ec8a78;
   --danger-soft: rgba(236, 138, 120, 0.14);
   --warning: #e0b45c;
@@ -42,6 +43,7 @@
   --ink-text: #f6f5f1;
   --positive: #1f7a4d;
   --positive-soft: rgba(31, 122, 77, 0.1);
+  --logo-tile: #1a1a18;
   --danger: #b3412f;
   --danger-soft: rgba(179, 65, 47, 0.1);
   --warning: #93640f;
@@ -146,11 +148,37 @@ input[type="number"] {
 }
 
 .brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
   font-family: var(--font-display);
   font-weight: 700;
   font-size: 19px;
   letter-spacing: -0.01em;
   color: var(--ink);
+}
+
+.brand-mark {
+  flex: none;
+  width: 30px;
+  height: 30px;
+}
+
+.login-card .brand-mark {
+  width: 40px;
+  height: 40px;
+}
+
+/* No celular estreito, só a logo cabe ao lado do seletor de mês */
+@media (max-width: 419px) {
+  .topbar .brand-name {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
 }
 
 .dot {
