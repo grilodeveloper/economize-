@@ -111,6 +111,13 @@ const limitInput = document.querySelector("#limitInput");
 const limitError = document.querySelector("#limitError");
 const confirmDialog = document.querySelector("#confirmDialog");
 const toast = document.querySelector("#toast");
+const goalCard = document.querySelector("#goalCard");
+const goalDialog = document.querySelector("#goalDialog");
+const goalForm = document.querySelector("#goalForm");
+const goalInput = document.querySelector("#goalInput");
+const goalReasonInput = document.querySelector("#goalReasonInput");
+const goalError = document.querySelector("#goalError");
+const goalHint = document.querySelector("#goalHint");
 const toastText = document.querySelector("#toastText");
 const toastAction = document.querySelector("#toastAction");
 
@@ -130,26 +137,32 @@ let actionTarget = null;
 let editingCardId = null;
 let limitCategory = "";
 let limitsInDatabase = false;
+let settings = { savingsGoal: 0, savingsGoalReason: "" };
+let settingsInDatabase = false;
 let toastTimer = null;
 
 async function initApp() {
   monthInput.value = getCurrentMonth();
   syncThemeRadios();
   categoryLimits = loadCategoryLimits();
+  settings = loadLocalSettings();
   setView(getViewFromHash());
 
   entryList.setAttribute("aria-busy", "true");
   entryList.innerHTML = `<li class="empty">Carregando seus lançamentos…</li>`;
 
-  const [loadedEntries, loadedCards, loadedLimits] = await Promise.all([
+  const [loadedEntries, loadedCards, loadedLimits, loadedSettings] = await Promise.all([
     dbLoadEntries(),
     dbLoadCards(),
     dbLoadCategoryLimits(),
+    dbLoadSettings(),
   ]);
 
   entries = normalizeEntries(loadedEntries);
   cardSettings = normalizeCardSettings(loadedCards.length ? loadedCards : defaultCards);
   categoryLimits = await syncCategoryLimits(loadedLimits);
+  settings = await syncSettings(loadedSettings);
+  await migrateCreditPaidKeys();
 
   entryList.removeAttribute("aria-busy");
   renderDatalists();
@@ -329,7 +342,7 @@ form.addEventListener("submit", async (event) => {
             ...entry,
             id: editEntryId,
             createdAt: existing.createdAt,
-            paidMonths: existing.paidMonths || [],
+            paidMonths: withInvoiceMarker(entry, existing.paidMonths || []),
           }
         : item,
     );
@@ -338,7 +351,7 @@ form.addEventListener("submit", async (event) => {
     entries.push({
       ...entry,
       id: savedId,
-      paidMonths: [],
+      paidMonths: withInvoiceMarker(entry, []),
       createdAt: new Date().toISOString(),
     });
   }
@@ -353,19 +366,22 @@ form.addEventListener("submit", async (event) => {
     clearListFilters();
     showToast("Alterações salvas");
   } else {
-    const jumpMonth = getNextMonthAfterCardDue(entry);
+    const referenceMonth = entry.dueDate ? entry.dueDate.slice(0, 7) : monthInput.value;
+    const targetMonth = shiftMonth(referenceMonth, getCreditMonthShift(entry));
 
-    if (jumpMonth) {
-      showToast("Lançamento adicionado", {
-        label: `Ir para ${getMonthName(jumpMonth)}`,
-        onClick: () => {
-          monthInput.value = jumpMonth;
-          render();
+    if (targetMonth !== monthInput.value) {
+      showToast(
+        entry.type === "credit"
+          ? `Entrou na fatura de ${getMonthName(targetMonth)}`
+          : `Adicionado em ${getMonthName(targetMonth)}`,
+        {
+          label: "Ver",
+          onClick: () => {
+            monthInput.value = targetMonth;
+            render();
+          },
         },
-      });
-    } else if (entry.startMonth && entry.startMonth !== monthInput.value) {
-      monthInput.value = entry.startMonth;
-      showToast(`Adicionado em ${getMonthName(entry.startMonth)}`);
+      );
     } else {
       showToast("Lançamento adicionado");
     }
@@ -447,13 +463,50 @@ function updateEntryHint() {
 
   if (type === "credit" && cardName && date) {
     const card = getCardConfig(cardName);
-    const closingMonth = getInvoiceMonth(cardName, date);
-    const dueMonth = card.dueDay <= card.closingDay ? shiftMonth(closingMonth, 1) : closingMonth;
+    const dueMonth = shiftMonth(
+      date.slice(0, 7),
+      getCreditMonthShift({ type: "credit", cardName, dueDate: date }),
+    );
     hints.push(`Vai para a fatura do ${cardName} que vence em ${card.dueDay} de ${getMonthName(dueMonth)}.`);
   }
 
   entryHint.textContent = hints.join(" ");
   entryHint.hidden = !hints.length;
+  updateGoalHint(type, repeat, date, cardName);
+}
+
+// Lembra da meta antes de salvar um gasto que deixa a sobra abaixo dela
+function updateGoalHint(type, repeat, date, cardName) {
+  const amount = Number(form.elements.amount.value) || 0;
+  goalHint.hidden = true;
+
+  if (!settings.savingsGoal || editEntryId || type === "income" || !amount) {
+    return;
+  }
+
+  const shift = getCreditMonthShift({ type, cardName, dueDate: date });
+  const month = shiftMonth(date ? date.slice(0, 7) : monthInput.value, shift);
+  const before = getMonthBalance(month);
+  const after = before - amount;
+
+  if (after >= settings.savingsGoal) {
+    return;
+  }
+
+  const monthName = getMonthName(month);
+  goalHint.textContent =
+    before >= settings.savingsGoal
+      ? `Com esse gasto, ${monthName} fica ${currency.format(settings.savingsGoal - after)} abaixo da meta de guardar ${currency.format(settings.savingsGoal)}.`
+      : `${capitalize(monthName)} já está abaixo da meta. Esse gasto aumenta a diferença para ${currency.format(settings.savingsGoal - after)}.`;
+  if (repeat !== "once") {
+    goalHint.textContent += " E ele se repete nos próximos meses.";
+  }
+  goalHint.hidden = false;
+}
+
+function getMonthBalance(month) {
+  const monthEntries = getEntriesForMonth(month);
+  return sumByType(monthEntries, "income") - getTotalSpent(monthEntries);
 }
 
 function renderCardChoices(selectedName = "") {
@@ -563,6 +616,10 @@ document.querySelector(".views").addEventListener("click", async (event) => {
 
   if (actionName === "edit-card") {
     openCardDialog(action.dataset.cardId);
+  }
+
+  if (actionName === "goal") {
+    openGoalDialog();
   }
 });
 
@@ -811,6 +868,52 @@ function showCardError(message) {
   cardError.hidden = false;
 }
 
+/* ---------- Meta de economia ---------- */
+
+function openGoalDialog() {
+  goalError.hidden = true;
+  goalInput.value = settings.savingsGoal ? String(settings.savingsGoal) : "";
+  goalReasonInput.value = settings.savingsGoalReason || "";
+  document.querySelector("#removeGoal").hidden = !settings.savingsGoal;
+  goalDialog.showModal();
+  goalInput.focus();
+}
+
+goalForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const value = Number(goalInput.value.trim().replace(",", "."));
+
+  if (!Number.isFinite(value) || value <= 0) {
+    goalError.textContent = "Informe quanto querem guardar por mês, maior que zero.";
+    goalError.hidden = false;
+    return;
+  }
+
+  await saveSettings({ savingsGoal: value, savingsGoalReason: goalReasonInput.value.trim() });
+  goalDialog.close();
+  showToast("Meta salva");
+});
+
+document.querySelector("#removeGoal").addEventListener("click", async () => {
+  goalDialog.close();
+  await saveSettings({ savingsGoal: 0, savingsGoalReason: "" });
+  showToast("Meta removida");
+});
+
+async function saveSettings(nextSettings) {
+  settings = nextSettings;
+  render();
+
+  if (!settingsInDatabase) {
+    saveLocalSettings();
+    return;
+  }
+
+  if (!(await dbSaveSettings(settings))) {
+    showToast("Não consegui salvar a meta. Confira a conexão e tente de novo.");
+  }
+}
+
 /* ---------- Ajustes ---------- */
 
 exportBackup.addEventListener("click", downloadBackup);
@@ -838,7 +941,7 @@ function syncThemeRadios() {
 
 clearMonth.addEventListener("click", async () => {
   const removableEntries = entries.filter(
-    (entry) => entry.repeat === "once" && entry.startMonth === monthInput.value,
+    (entry) => entry.repeat === "once" && getOccurrenceForMonth(entry, monthInput.value).length,
   );
 
   if (!removableEntries.length) {
@@ -893,12 +996,61 @@ function render() {
       ? `${Math.round((totalSpent / income) * 100)}% das entradas já tem destino`
       : "Lance as entradas do mês para ver quanto sobra";
 
+  renderGoal(monthBalance, income);
   renderComparison(monthEntries);
   renderInvoices(monthEntries);
   renderUpcoming(monthEntries);
   renderCategories(monthEntries);
   renderEntries(monthEntries);
   renderCards(monthEntries);
+}
+
+function renderGoal(monthBalance, income) {
+  const goal = settings.savingsGoal;
+  const reason = settings.savingsGoalReason;
+  const settingsTitle = document.querySelector("#goalSettingsTitle");
+  const settingsMeta = document.querySelector("#goalSettingsMeta");
+  const goalBar = document.querySelector("#goalBar");
+  const goalStatus = document.querySelector("#goalStatus");
+
+  settingsTitle.textContent = goal ? `Guardar ${currency.format(goal)} por mês` : "Definir meta";
+  settingsMeta.textContent = goal
+    ? reason || "Sem motivo definido"
+    : "Um valor para guardar todo mês, lembrado na tela Mês";
+
+  if (!goal) {
+    goalCard.dataset.state = "empty";
+    document.querySelector("#goalTitle").textContent = "Quanto vocês querem guardar por mês?";
+    document.querySelector("#goalAmount").textContent = "Definir meta";
+    goalBar.style.width = "0%";
+    goalStatus.textContent = "Uma meta ajuda a lembrar de guardar antes de gastar.";
+    return;
+  }
+
+  const ratio = Math.max(monthBalance, 0) / goal;
+  const free = monthBalance - goal;
+
+  document.querySelector("#goalTitle").textContent = reason || "Meta de economia";
+  document.querySelector("#goalAmount").textContent = `${currency.format(goal)}/mês`;
+  goalBar.style.width = `${Math.min(ratio * 100, 100)}%`;
+
+  if (!income) {
+    goalCard.dataset.state = "pending";
+    goalBar.dataset.level = "none";
+    goalStatus.textContent = "Lance as entradas do mês para ver se a meta cabe.";
+  } else if (free >= 0) {
+    goalCard.dataset.state = "ok";
+    goalBar.dataset.level = "ok";
+    goalStatus.textContent = `Dá para guardar a meta. Depois disso, ainda ficam ${currency.format(free)} livres para gastar.`;
+  } else if (monthBalance > 0) {
+    goalCard.dataset.state = "short";
+    goalBar.dataset.level = "mid";
+    goalStatus.textContent = `Faltam ${currency.format(-free)} para guardar a meta este mês.`;
+  } else {
+    goalCard.dataset.state = "miss";
+    goalBar.dataset.level = "high";
+    goalStatus.textContent = `Este mês não sobra nada para guardar. A meta precisa de ${currency.format(goal)}.`;
+  }
 }
 
 function renderComparison(monthEntries) {
@@ -1164,6 +1316,10 @@ function getEntryMeta(entry) {
     parts.push(`${entry.installmentNumber}/${entry.installments}`);
   } else if (entry.repeat === "fixed") {
     parts.push("todo mês");
+  }
+
+  if (entry.purchaseDate) {
+    parts.push(`compra ${formatShortDate(entry.purchaseDate)}`);
   }
 
   return parts.join(" · ");
@@ -1463,7 +1619,9 @@ function getTotalSpent(monthEntries) {
 
 function getOccurrenceForMonth(entry, selectedMonth) {
   const repeat = entry.repeat || "once";
-  const startMonth = entry.startMonth || entry.month || selectedMonth;
+  // Compras no cartão contam no mês em que a fatura vence, não no mês da compra
+  const shift = entry.startMonth ? getCreditMonthShift(entry) : 0;
+  const startMonth = shiftMonth(entry.startMonth || entry.month || selectedMonth, shift);
   const monthOffset = getMonthOffset(startMonth, selectedMonth);
 
   if (monthOffset < 0) {
@@ -1478,7 +1636,12 @@ function getOccurrenceForMonth(entry, selectedMonth) {
     return [];
   }
 
-  const occurrenceDate = getOccurrenceDate(entry, selectedMonth);
+  const isCredit = entry.type === "credit";
+  const monthDate = getOccurrenceDate(entry, shiftMonth(selectedMonth, -shift));
+  // Parcelado ou à vista: a compra foi uma só; fixo: uma compra por mês
+  const purchaseDate =
+    repeat === "fixed" || !entry.startMonth ? monthDate : getOccurrenceDate(entry, entry.startMonth);
+  const occurrenceDate = isCredit && entry.dueDate ? getCardDueDate(entry.cardName, selectedMonth) : monthDate;
   const installmentNumber = repeat === "installment" ? monthOffset + 1 : null;
   const paidKey = getPaidKey(selectedMonth, installmentNumber, repeat);
 
@@ -1487,15 +1650,71 @@ function getOccurrenceForMonth(entry, selectedMonth) {
       ...entry,
       occurrenceMonth: selectedMonth,
       occurrenceDate,
+      purchaseDate: isCredit ? purchaseDate : "",
       installmentNumber,
       paidKey,
       isPaid: isEntryPaid(entry, paidKey),
-      invoiceMonth:
-        entry.type === "credit"
-          ? getInvoiceMonth(entry.cardName, occurrenceDate || `${selectedMonth}-01`)
-          : "",
+      invoiceMonth: isCredit ? selectedMonth : "",
     },
   ];
+}
+
+// Quantos meses depois da compra a fatura vence: 0, 1 ou 2
+function getCreditMonthShift(entry) {
+  if (entry.type !== "credit" || !entry.dueDate) {
+    return 0;
+  }
+
+  const card = getCardConfig(entry.cardName || "Cartão não informado");
+  const day = Number(entry.dueDate.split("-")[2]);
+  const closesNextMonth = day > card.closingDay ? 1 : 0;
+  const dueAfterClosingMonth = card.dueDay <= card.closingDay ? 1 : 0;
+
+  return closesNextMonth + dueAfterClosingMonth;
+}
+
+function getCardDueDate(cardName, month) {
+  const card = getCardConfig(cardName || "Cartão não informado");
+  const day = Math.min(card.dueDay, getLastDayOfMonth(month));
+
+  return `${month}-${String(day).padStart(2, "0")}`;
+}
+
+// Marcador gravado em paidMonths: as chaves de pago dessa compra já usam o mês da fatura
+const INVOICE_MONTH_MARKER = "invoice-month-v1";
+
+function withInvoiceMarker(entry, paidMonths) {
+  if (entry.type !== "credit" || paidMonths.includes(INVOICE_MONTH_MARKER)) {
+    return paidMonths;
+  }
+
+  return [...paidMonths, INVOICE_MONTH_MARKER];
+}
+
+// Uma única vez por compra: leva as marcações de pago (que usavam o mês da compra)
+// para o mês da fatura, e grava o marcador para não migrar de novo em outro aparelho
+async function migrateCreditPaidKeys() {
+  const pending = entries.filter(
+    (entry) => entry.type === "credit" && !entry.paidMonths.includes(INVOICE_MONTH_MARKER),
+  );
+
+  if (!pending.length) {
+    return;
+  }
+
+  const migrated = pending.map((entry) => {
+    const shift = getCreditMonthShift(entry);
+    const paidMonths = entry.paidMonths.map((key) => {
+      const [month, ...rest] = key.split("::");
+
+      return /^\d{4}-\d{2}$/.test(month) ? [shiftMonth(month, shift), ...rest].join("::") : key;
+    });
+
+    return { ...entry, paidMonths: [...paidMonths, INVOICE_MONTH_MARKER] };
+  });
+
+  entries = entries.map((entry) => migrated.find((item) => item.id === entry.id) || entry);
+  await saveEntries(migrated);
 }
 
 function getRepeatLabel(entry) {
@@ -1558,43 +1777,6 @@ function getCardName(formData) {
   }
 
   return String(formData.get("cardName") || "").trim() || "Cartão não informado";
-}
-
-function getNextMonthAfterCardDue(entry) {
-  if (entry.type !== "credit") {
-    return "";
-  }
-
-  const referenceDate = getEntryReferenceDate(entry);
-
-  if (!referenceDate) {
-    return "";
-  }
-
-  const card = getCardConfig(entry.cardName);
-  const [year, month, day] = referenceDate.split("-").map(Number);
-  const referenceMonth = `${year}-${String(month).padStart(2, "0")}`;
-
-  if (day <= card.dueDay) {
-    return "";
-  }
-
-  return shiftMonth(referenceMonth, 1);
-}
-
-function getEntryReferenceDate(entry) {
-  if (entry.dueDate) {
-    return entry.dueDate;
-  }
-
-  if (monthInput.value !== getCurrentMonth()) {
-    return "";
-  }
-
-  const now = new Date();
-  const day = String(now.getDate()).padStart(2, "0");
-
-  return `${monthInput.value}-${day}`;
 }
 
 function togglePaidOccurrence(entry, paidKey) {
@@ -1731,7 +1913,13 @@ function startEdit(id) {
   form.elements.dueDate.value = entry.dueDate || "";
   setRadioValue(form, "repeat", entry.repeat || "once");
   installmentsInput.value = entry.installments || 2;
-  currentInstallmentInput.value = occurrence?.installmentNumber || 1;
+  currentInstallmentInput.value =
+    entry.repeat === "installment" && entry.dueDate
+      ? Math.min(
+          Math.max(getMonthOffset(entry.startMonth, entry.dueDate.slice(0, 7)) + 1, 1),
+          entry.installments,
+        )
+      : occurrence?.installmentNumber || 1;
   renderCardChoices(entry.cardName || "");
   entryDialogTitle.textContent = "Editar lançamento";
   submitEntry.textContent = "Salvar";
@@ -1748,7 +1936,7 @@ async function duplicateEntry(id) {
     ...entry,
     id: crypto.randomUUID(),
     description: `${entry.description} (cópia)`,
-    paidMonths: [],
+    paidMonths: withInvoiceMarker(entry, []),
     createdAt: new Date().toISOString(),
   };
   entries.push(newEntry);
@@ -1814,18 +2002,6 @@ function getCardConfig(cardName) {
       active: true,
     }
   );
-}
-
-function getInvoiceMonth(cardName, date) {
-  const card = getCardConfig(cardName);
-  const [year, month, day] = date.split("-").map(Number);
-  const baseMonth = `${year}-${String(month).padStart(2, "0")}`;
-
-  if (day > card.closingDay) {
-    return shiftMonth(baseMonth, 1);
-  }
-
-  return baseMonth;
 }
 
 function getMonthOffset(startMonth, selectedMonth) {
@@ -2052,6 +2228,47 @@ async function syncCategoryLimits(remoteLimits) {
   }
 
   return { ...Object.fromEntries(missing.map(([c, a]) => [c, Number(a)])), ...remoteLimits };
+}
+
+const SETTINGS_KEY = "economize.settings.v1";
+
+function loadLocalSettings() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
+    return {
+      savingsGoal: Number(saved.savingsGoal) || 0,
+      savingsGoalReason: String(saved.savingsGoalReason || ""),
+    };
+  } catch {
+    return { savingsGoal: 0, savingsGoalReason: "" };
+  }
+}
+
+function saveLocalSettings() {
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+}
+
+// Usa a tabela user_settings quando ela existe. Se a meta foi definida antes
+// da tabela existir, leva ela para lá na primeira vez.
+async function syncSettings(remoteSettings) {
+  const localSettings = loadLocalSettings();
+
+  if (remoteSettings === null) {
+    settingsInDatabase = false;
+    return localSettings;
+  }
+
+  settingsInDatabase = true;
+
+  if (!remoteSettings.savingsGoal && localSettings.savingsGoal) {
+    if (await dbSaveSettings(localSettings)) {
+      localStorage.removeItem(SETTINGS_KEY);
+    }
+    return localSettings;
+  }
+
+  localStorage.removeItem(SETTINGS_KEY);
+  return { savingsGoal: 0, savingsGoalReason: "", ...remoteSettings };
 }
 
 function saveCategoryLimits() {

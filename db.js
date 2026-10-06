@@ -94,6 +94,41 @@ async function dbDeleteCategoryLimit(category) {
   return !error;
 }
 
+// Meta de economia. Retorna null se a tabela não existir ainda, {} se não há nada salvo
+async function dbLoadSettings() {
+  const { data, error } = await supabaseClient
+    .from("user_settings")
+    .select("savings_goal, savings_goal_reason")
+    .maybeSingle();
+
+  if (error) {
+    console.error("Erro ao carregar configurações:", error);
+    return null;
+  }
+
+  if (!data) return {};
+
+  return {
+    savingsGoal: Number(data.savings_goal) || 0,
+    savingsGoalReason: data.savings_goal_reason || "",
+  };
+}
+
+async function dbSaveSettings(settings) {
+  const { error } = await supabaseClient.from("user_settings").upsert(
+    {
+      user_id: window.currentUser.id,
+      savings_goal: settings.savingsGoal || null,
+      savings_goal_reason: settings.savingsGoalReason || null,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "user_id" },
+  );
+
+  if (error) console.error("Erro ao salvar configurações:", error);
+  return !error;
+}
+
 // Conversores banco → app (snake_case → camelCase)
 function dbEntryToApp(row) {
   return {

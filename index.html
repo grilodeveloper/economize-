@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="theme-color" content="#0f1513" />
+    <meta name="theme-color" content="#151514" />
     <title>Economize!</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -93,6 +93,14 @@
             <p id="balance" class="hero-value">R$ 0,00</p>
             <div class="meter" aria-hidden="true"><div id="progressBar" class="meter-fill"></div></div>
             <p id="spentPercent" class="hero-note"></p>
+            <button id="goalCard" class="goal" type="button" data-action="goal">
+              <span class="goal-head">
+                <span id="goalTitle" class="goal-title"></span>
+                <span id="goalAmount" class="goal-amount"></span>
+              </span>
+              <span class="bar" aria-hidden="true"><span id="goalBar" class="bar-fill"></span></span>
+              <span id="goalStatus" class="goal-status"></span>
+            </button>
             <dl class="hero-stats">
               <div><dt>Entra</dt><dd id="totalIncome">R$ 0,00</dd></div>
               <div><dt>Sai</dt><dd id="totalExpenses">R$ 0,00</dd></div>
@@ -167,6 +175,18 @@
               <label><input type="radio" name="theme" value="light" /><span>Claro</span></label>
               <label><input type="radio" name="theme" value="dark" /><span>Escuro</span></label>
             </div>
+          </section>
+
+          <section class="block">
+            <h2>Meta de economia</h2>
+            <ul class="rows">
+              <li>
+                <button class="row row-button" type="button" data-action="goal">
+                  <span class="row-main"><strong id="goalSettingsTitle"></strong><small id="goalSettingsMeta"></small></span>
+                  <svg class="icon muted"><use href="#i-right" /></svg>
+                </button>
+              </li>
+            </ul>
           </section>
 
           <section class="block">
@@ -284,6 +304,7 @@
         </div>
 
         <p id="entryHint" class="hint" hidden></p>
+        <p id="goalHint" class="hint hint-warning" hidden></p>
         <p id="entryError" class="form-error" hidden></p>
 
         <div class="sheet-actions">
@@ -376,6 +397,34 @@
         <p id="limitError" class="form-error" hidden></p>
         <div class="sheet-actions">
           <button id="showCategoryEntries" class="button button-ghost" type="button">Ver lançamentos</button>
+          <button class="button button-primary" type="submit">Salvar</button>
+        </div>
+      </form>
+    </dialog>
+
+    <!-- Meta de economia -->
+    <dialog id="goalDialog" class="sheet sheet-small" aria-labelledby="goalDialogTitle">
+      <form id="goalForm" class="sheet-body" novalidate>
+        <div class="sheet-head">
+          <div>
+            <h2 id="goalDialogTitle">Meta de economia</h2>
+            <p class="muted-text">Quanto vocês querem guardar todo mês.</p>
+          </div>
+          <button class="icon-button" type="button" data-close-dialog aria-label="Fechar">
+            <svg class="icon"><use href="#i-x" /></svg>
+          </button>
+        </div>
+        <label class="field">
+          <span>Guardar por mês (R$)</span>
+          <input id="goalInput" type="number" inputmode="decimal" min="0.01" step="0.01" placeholder="1000" />
+        </label>
+        <label class="field">
+          <span>Para quê? (opcional)</span>
+          <input id="goalReasonInput" type="text" maxlength="60" placeholder="Reserva de emergência" />
+        </label>
+        <p id="goalError" class="form-error" hidden></p>
+        <div class="sheet-actions">
+          <button id="removeGoal" class="button button-danger-ghost" type="button">Tirar meta</button>
           <button class="button button-primary" type="submit">Salvar</button>
         </div>
       </form>

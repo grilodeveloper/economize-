@@ -5,21 +5,23 @@
   --font-ui: "Figtree", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-display: "Bricolage Grotesque", var(--font-ui);
 
-  --bg: #0f1513;
-  --surface: #161e1b;
-  --surface-2: #1e2824;
-  --line: #27332e;
-  --line-strong: #3a4842;
-  --text: #e8efe9;
-  --muted: #92a097;
-  --accent: #4fc28f;
-  --accent-soft: rgba(79, 194, 143, 0.14);
-  --accent-ink: #06150e;
-  --danger: #f08a7e;
-  --danger-soft: rgba(240, 138, 126, 0.14);
-  --warning: #e3b55a;
-  --backdrop: rgba(3, 8, 6, 0.62);
-  --shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+  /* Papel e tinta: neutros quentes; cor só para dinheiro e alerta */
+  --bg: #151514;
+  --surface: #1d1d1b;
+  --surface-2: #272725;
+  --line: #2c2b29;
+  --line-strong: #43423e;
+  --text: #eceae4;
+  --muted: #8f8c84;
+  --ink: #eceae4;
+  --ink-text: #151514;
+  --positive: #6cc495;
+  --positive-soft: rgba(108, 196, 149, 0.14);
+  --danger: #ec8a78;
+  --danger-soft: rgba(236, 138, 120, 0.14);
+  --warning: #e0b45c;
+  --backdrop: rgba(0, 0, 0, 0.6);
+  --shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
 
   --radius: 14px;
   --radius-sm: 10px;
@@ -29,21 +31,22 @@
 
 :root[data-theme="light"] {
   color-scheme: light;
-  --bg: #f2f5f1;
-  --surface: #ffffff;
-  --surface-2: #eaf0e9;
-  --line: #dbe3d9;
-  --line-strong: #bfcabe;
-  --text: #16201b;
-  --muted: #5d6a62;
-  --accent: #1d7a52;
-  --accent-soft: rgba(29, 122, 82, 0.1);
-  --accent-ink: #ffffff;
-  --danger: #b8453a;
-  --danger-soft: rgba(184, 69, 58, 0.1);
-  --warning: #9a6a12;
-  --backdrop: rgba(22, 32, 27, 0.4);
-  --shadow: 0 12px 32px rgba(22, 32, 27, 0.14);
+  --bg: #f6f5f1;
+  --surface: #fdfcfa;
+  --surface-2: #edebe5;
+  --line: #e2e0d8;
+  --line-strong: #c9c6bc;
+  --text: #1a1a18;
+  --muted: #706e66;
+  --ink: #1a1a18;
+  --ink-text: #f6f5f1;
+  --positive: #1f7a4d;
+  --positive-soft: rgba(31, 122, 77, 0.1);
+  --danger: #b3412f;
+  --danger-soft: rgba(179, 65, 47, 0.1);
+  --warning: #93640f;
+  --backdrop: rgba(26, 26, 24, 0.35);
+  --shadow: 0 12px 32px rgba(26, 26, 24, 0.12);
 }
 
 /* ---------- Base ---------- */
@@ -98,7 +101,7 @@ h2 {
 }
 
 :focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--ink);
   outline-offset: 2px;
 }
 
@@ -147,7 +150,7 @@ input[type="number"] {
   font-weight: 700;
   font-size: 19px;
   letter-spacing: -0.01em;
-  color: var(--accent);
+  color: var(--ink);
 }
 
 .dot {
@@ -182,8 +185,8 @@ input[type="number"] {
 }
 
 .button-primary {
-  background: var(--accent);
-  color: var(--accent-ink);
+  background: var(--ink);
+  color: var(--ink-text);
 }
 
 .button-ghost {
@@ -197,7 +200,7 @@ input[type="number"] {
 
 .button-danger {
   background: var(--danger);
-  color: var(--accent-ink);
+  color: var(--ink-text);
 }
 
 .button-danger-ghost {
@@ -237,10 +240,12 @@ input[type="number"] {
   border: 0;
   background: none;
   padding: 0;
-  color: var(--accent);
+  color: var(--ink);
   font-size: 14px;
   font-weight: 600;
-  text-decoration: none;
+  text-decoration: underline;
+  text-decoration-color: var(--line-strong);
+  text-underline-offset: 3px;
 }
 
 .link-button {
@@ -252,15 +257,15 @@ input[type="number"] {
   padding: 6px 12px;
   border: 1px solid transparent;
   border-radius: 99px;
-  background: var(--accent);
-  color: var(--accent-ink);
+  background: var(--ink);
+  color: var(--ink-text);
   font-size: 13px;
   font-weight: 700;
 }
 
 .pill-paid {
-  background: var(--accent-soft);
-  color: var(--accent);
+  background: var(--positive-soft);
+  color: var(--positive);
 }
 
 .pill-muted {
@@ -305,6 +310,7 @@ input[type="number"] {
   font-weight: 700;
   font-size: 17px;
   letter-spacing: -0.01em;
+  white-space: nowrap;
   cursor: pointer;
 }
 
@@ -347,7 +353,7 @@ input[type="number"] {
 }
 
 .tab[aria-current="page"] {
-  color: var(--accent);
+  color: var(--ink);
 }
 
 .fab {
@@ -361,8 +367,8 @@ input[type="number"] {
   height: 58px;
   border: 0;
   border-radius: 18px;
-  background: var(--accent);
-  color: var(--accent-ink);
+  background: var(--ink);
+  color: var(--ink-text);
   box-shadow: var(--shadow);
 }
 
@@ -395,7 +401,7 @@ input[type="number"] {
   font-weight: 700;
   line-height: 1.05;
   letter-spacing: -0.03em;
-  color: var(--accent);
+  color: var(--positive);
   font-variant-numeric: tabular-nums;
 }
 
@@ -417,7 +423,7 @@ input[type="number"] {
   display: block;
   height: 100%;
   border-radius: inherit;
-  background: var(--accent);
+  background: var(--ink);
   transition: width 0.3s ease;
 }
 
@@ -439,6 +445,83 @@ input[type="number"] {
   margin-top: 8px;
   color: var(--muted);
   font-size: 13px;
+}
+
+.goal {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  margin-top: 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  text-align: left;
+}
+
+.goal:hover {
+  border-color: var(--line-strong);
+}
+
+.goal[data-state="empty"] {
+  border-style: dashed;
+  background: transparent;
+}
+
+.goal-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.goal-title {
+  min-width: 0;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.goal-amount {
+  flex: none;
+  color: var(--muted);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.goal[data-state="empty"] .goal-amount {
+  color: var(--ink);
+  text-decoration: underline;
+  text-decoration-color: var(--line-strong);
+  text-underline-offset: 3px;
+}
+
+.goal[data-state="empty"] .bar {
+  display: none;
+}
+
+.goal .bar {
+  height: 6px;
+}
+
+.goal-status {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.goal[data-state="ok"] .goal-status {
+  color: var(--positive);
+}
+
+.goal[data-state="short"] .goal-status {
+  color: var(--warning);
+}
+
+.goal[data-state="miss"] .goal-status {
+  color: var(--danger);
+}
+
+.bar-fill[data-level="ok"] {
+  background: var(--positive);
 }
 
 .hero-stats {
@@ -636,20 +719,20 @@ input[type="number"] {
 }
 
 .check:hover {
-  border-color: var(--accent);
-  color: var(--accent);
+  border-color: var(--ink);
+  color: var(--ink);
 }
 
 .check.is-checked {
-  border-color: var(--accent);
-  background: var(--accent);
-  color: var(--accent-ink);
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--ink-text);
 }
 
 .check-income {
   border: 0;
-  background: var(--accent-soft);
-  color: var(--accent);
+  background: var(--positive-soft);
+  color: var(--positive);
 }
 
 /* ---------- Lançamentos ---------- */
@@ -672,7 +755,7 @@ input[type="number"] {
 }
 
 .search:focus-within {
-  border-color: var(--accent);
+  border-color: var(--ink);
 }
 
 .search input {
@@ -737,7 +820,7 @@ input[type="number"] {
 }
 
 .chip-radio:has(input:focus-visible) {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--ink);
   outline-offset: 2px;
 }
 
@@ -807,7 +890,7 @@ input[type="number"] {
 }
 
 .entry-amount.is-income {
-  color: var(--accent);
+  color: var(--positive);
 }
 
 .entry.is-paid .entry-main strong,
@@ -923,7 +1006,7 @@ input[type="number"] {
 }
 
 .segmented input:focus-visible + span {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--ink);
   outline-offset: -2px;
 }
 
@@ -968,7 +1051,7 @@ input[type="number"] {
 }
 
 .field input:focus {
-  border-color: var(--accent);
+  border-color: var(--ink);
 }
 
 .field input[type="color"] {
@@ -1007,7 +1090,7 @@ input[type="number"] {
 }
 
 .amount-input:focus-within {
-  border-color: var(--accent);
+  border-color: var(--ink);
 }
 
 .amount-input input {
@@ -1040,7 +1123,7 @@ input[type="number"] {
   grid-row: span 2;
   width: 22px;
   height: 22px;
-  accent-color: var(--accent);
+  accent-color: var(--ink);
 }
 
 .switch span {
@@ -1055,8 +1138,13 @@ input[type="number"] {
 .hint {
   padding: 10px 12px;
   border-radius: var(--radius-sm);
-  background: var(--accent-soft);
+  background: var(--surface-2);
   font-size: 14px;
+}
+
+.hint-warning {
+  background: var(--danger-soft);
+  color: var(--text);
 }
 
 .form-error {
@@ -1248,7 +1336,7 @@ input[type="number"] {
   }
 
   .tab[aria-current="page"] {
-    border-bottom-color: var(--accent);
+    border-bottom-color: var(--ink);
   }
 
   .tab:hover {
