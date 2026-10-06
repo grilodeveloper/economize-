@@ -463,11 +463,13 @@ function updateEntryHint() {
 
   if (type === "credit" && cardName && date) {
     const card = getCardConfig(cardName);
-    const dueMonth = shiftMonth(
-      date.slice(0, 7),
-      getCreditMonthShift({ type: "credit", cardName, dueDate: date }),
+    const purchase = { type: "credit", cardName, dueDate: date };
+    const dueMonth = shiftMonth(date.slice(0, 7), getDueMonthShift(purchase, card));
+    const countMonth = shiftMonth(date.slice(0, 7), getCreditMonthShift(purchase, card));
+    hints.push(
+      `Vai para a fatura do ${cardName} que vence em ${card.dueDay} de ${getMonthName(dueMonth)}` +
+        (countMonth !== dueMonth ? ` e conta em ${getMonthName(countMonth)}.` : "."),
     );
-    hints.push(`Vai para a fatura do ${cardName} que vence em ${card.dueDay} de ${getMonthName(dueMonth)}.`);
   }
 
   entryHint.textContent = hints.join(" ");
@@ -776,9 +778,24 @@ function openCardDialog(cardId) {
   document.querySelector("#cardClosingInput").value = card ? card.closingDay : 25;
   document.querySelector("#cardDueInput").value = card ? card.dueDay : 5;
   document.querySelector("#cardActiveInput").checked = card ? card.active : true;
+  setRadioValue(cardForm, "invoiceOffset", String(card?.invoiceOffset || 0));
   document.querySelector("#removeCard").hidden = !card;
+  updateInvoiceOffsetHint();
   cardDialog.showModal();
 }
+
+function updateInvoiceOffsetHint() {
+  const dueDay = clampDay(document.querySelector("#cardDueInput").value);
+  const offset = Number(getRadioValue(cardForm, "invoiceOffset")) || 0;
+  const dueMonth = shiftMonth(monthInput.value, 1);
+  const countMonth = shiftMonth(dueMonth, -offset);
+
+  document.querySelector("#invoiceOffsetHint").textContent =
+    `A fatura que vence em ${dueDay} de ${getMonthName(dueMonth)} conta em ${getMonthName(countMonth)}.`;
+}
+
+cardForm.addEventListener("input", updateInvoiceOffsetHint);
+cardForm.addEventListener("change", updateInvoiceOffsetHint);
 
 cardForm.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -803,6 +820,7 @@ cardForm.addEventListener("submit", async (event) => {
     closingDay: clampDay(document.querySelector("#cardClosingInput").value),
     dueDay: clampDay(document.querySelector("#cardDueInput").value),
     active: document.querySelector("#cardActiveInput").checked,
+    invoiceOffset: Number(getRadioValue(cardForm, "invoiceOffset")) === 1 ? 1 : 0,
   };
 
   cardSettings = previous
@@ -821,12 +839,27 @@ cardForm.addEventListener("submit", async (event) => {
     );
   }
 
+  // Fechamento, vencimento ou mês de contagem mudaram: as compras podem trocar de mês,
+  // então as marcações de pago vão junto
+  const movedEntries = previous ? movePaidKeysForCardChange(previous, card) : [];
+  const changedIds = new Set([...renamedEntries, ...movedEntries].map((entry) => entry.id));
+
   cardDialog.close();
   renderDatalists();
   render();
 
-  await dbSaveCard(card);
-  await saveEntries(entries.filter((entry) => renamedEntries.some((old) => old.id === entry.id)));
+  const saved = await dbSaveCard(card);
+  await saveEntries(entries.filter((entry) => changedIds.has(entry.id)));
+
+  if (!saved) {
+    showToast(
+      card.invoiceOffset
+        ? "Não consegui salvar o cartão. Rode o SQL cards_invoice_offset.sql no Supabase e tente de novo."
+        : "Não consegui salvar o cartão. Confira a conexão e tente de novo.",
+    );
+    return;
+  }
+
   showToast(previous ? "Cartão atualizado" : "Cartão adicionado");
 });
 
@@ -1097,7 +1130,7 @@ function renderInvoices(monthEntries) {
         <li class="row">
           <button class="row-main row-link" type="button" data-action="card-entries" data-card="${escapeHtml(cardName)}">
             <strong><span class="dot" style="--dot: ${escapeHtml(card.color)}"></span>${escapeHtml(cardName)}</strong>
-            <small>Vence dia ${card.dueDay} · ${cardEntries.length} compra${cardEntries.length === 1 ? "" : "s"}</small>
+            <small>Vence ${card.invoiceOffset ? formatShortDate(getCardDueDate(cardName, monthInput.value)) : `dia ${card.dueDay}`} · ${cardEntries.length} compra${cardEntries.length === 1 ? "" : "s"}</small>
           </button>
           <span class="row-value">${currency.format(total)}</span>
           ${
@@ -1677,12 +1710,18 @@ function getOccurrenceForMonth(entry, selectedMonth) {
 }
 
 // Quantos meses depois da compra a fatura vence: 0, 1 ou 2
-function getCreditMonthShift(entry) {
+// Quantos meses depois da compra ela conta: o mês do vencimento da fatura,
+// ou um mês antes, se o cartão estiver configurado assim (invoiceOffset = 1)
+function getCreditMonthShift(entry, card = getCardConfig(entry.cardName || "Cartão não informado")) {
   if (entry.type !== "credit" || !entry.dueDate) {
     return 0;
   }
 
-  const card = getCardConfig(entry.cardName || "Cartão não informado");
+  return getDueMonthShift(entry, card) - (card.invoiceOffset || 0);
+}
+
+// Quantos meses depois da compra a fatura vence: 0, 1 ou 2
+function getDueMonthShift(entry, card) {
   const day = Number(entry.dueDate.split("-")[2]);
   const closesNextMonth = day > card.closingDay ? 1 : 0;
   const dueAfterClosingMonth = card.dueDay <= card.closingDay ? 1 : 0;
@@ -1690,15 +1729,47 @@ function getCreditMonthShift(entry) {
   return closesNextMonth + dueAfterClosingMonth;
 }
 
+// Data de vencimento da fatura que conta no mês informado
 function getCardDueDate(cardName, month) {
   const card = getCardConfig(cardName || "Cartão não informado");
-  const day = Math.min(card.dueDay, getLastDayOfMonth(month));
+  const dueMonth = shiftMonth(month, card.invoiceOffset || 0);
+  const day = Math.min(card.dueDay, getLastDayOfMonth(dueMonth));
 
-  return `${month}-${String(day).padStart(2, "0")}`;
+  return `${dueMonth}-${String(day).padStart(2, "0")}`;
 }
 
 // Marcador gravado em paidMonths: as chaves de pago dessa compra já usam o mês da fatura
 const INVOICE_MONTH_MARKER = "invoice-month-v1";
+
+function movePaidKeysForCardChange(previousCard, nextCard) {
+  const moved = [];
+
+  entries = entries.map((entry) => {
+    if (entry.type !== "credit" || entry.cardName !== nextCard.name || !entry.paidMonths.length) {
+      return entry;
+    }
+
+    const delta = getCreditMonthShift(entry, nextCard) - getCreditMonthShift(entry, previousCard);
+
+    if (!delta) {
+      return entry;
+    }
+
+    const updated = { ...entry, paidMonths: shiftPaidKeys(entry.paidMonths, delta) };
+    moved.push(updated);
+    return updated;
+  });
+
+  return moved;
+}
+
+function shiftPaidKeys(paidMonths, delta) {
+  return paidMonths.map((key) => {
+    const [month, ...rest] = key.split("::");
+
+    return /^\d{4}-\d{2}$/.test(month) ? [shiftMonth(month, delta), ...rest].join("::") : key;
+  });
+}
 
 function withInvoiceMarker(entry, paidMonths) {
   if (entry.type !== "credit" || paidMonths.includes(INVOICE_MONTH_MARKER)) {
@@ -1720,12 +1791,7 @@ async function migrateCreditPaidKeys() {
   }
 
   const migrated = pending.map((entry) => {
-    const shift = getCreditMonthShift(entry);
-    const paidMonths = entry.paidMonths.map((key) => {
-      const [month, ...rest] = key.split("::");
-
-      return /^\d{4}-\d{2}$/.test(month) ? [shiftMonth(month, shift), ...rest].join("::") : key;
-    });
+    const paidMonths = shiftPaidKeys(entry.paidMonths, getCreditMonthShift(entry));
 
     return { ...entry, paidMonths: [...paidMonths, INVOICE_MONTH_MARKER] };
   });
@@ -2017,6 +2083,7 @@ function getCardConfig(cardName) {
       dueDay: 10,
       color: "#b45309",
       active: true,
+      invoiceOffset: 0,
     }
   );
 }
@@ -2133,6 +2200,7 @@ function normalizeCardSettings(savedCards) {
     dueDay: clampDay(card.dueDay || 10),
     color: normalizeCardColor(card.color, index),
     active: card.active !== false,
+    invoiceOffset: card.invoiceOffset === 1 ? 1 : 0,
   }));
 }
 

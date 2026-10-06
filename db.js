@@ -28,6 +28,8 @@ async function dbDeleteEntry(id) {
   if (error) console.error("Erro ao deletar entry:", error);
 }
 
+let cardsHaveInvoiceOffset = false;
+
 async function dbLoadCards() {
   const { data, error } = await supabaseClient
     .from("cards")
@@ -39,6 +41,8 @@ async function dbLoadCards() {
     return [];
   }
 
+  // Só envia invoice_offset se a coluna já existe (cards_invoice_offset.sql)
+  cardsHaveInvoiceOffset = data.length ? "invoice_offset" in data[0] : cardsHaveInvoiceOffset;
   return data.map(dbCardToApp);
 }
 
@@ -47,6 +51,7 @@ async function dbSaveCard(card) {
   const { error } = await supabaseClient.from("cards").upsert(row, { onConflict: "id" });
 
   if (error) console.error("Erro ao salvar card:", error);
+  return !error;
 }
 
 async function dbDeleteCard(id) {
@@ -155,6 +160,7 @@ function dbCardToApp(row) {
     dueDay: row.due_day,
     color: row.color || "#6b7280",
     active: row.active,
+    invoiceOffset: Number(row.invoice_offset) === 1 ? 1 : 0,
   };
 }
 
@@ -185,5 +191,6 @@ function appCardToDb(card) {
     due_day: card.dueDay,
     color: card.color,
     active: card.active,
+    ...(cardsHaveInvoiceOffset || card.invoiceOffset ? { invoice_offset: card.invoiceOffset || 0 } : {}),
   };
 }

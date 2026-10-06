@@ -25,7 +25,9 @@ Roda direto no navegador, sem build e sem dependências para instalar. Os dados 
 ### Cartões de crédito
 - Cada cartão tem dia de fechamento, dia de vencimento e cor.
 - **A compra conta no mês em que a fatura vence**, e não no mês em que foi feita. Uma compra no dia 6 num cartão que fecha no dia 28 e vence no dia 5 aparece no mês seguinte, quando o dinheiro de fato sai da conta.
+- Cada cartão pode contar as compras no **mês anterior ao vencimento**, para bancos que chamam de "fatura de outubro" a que fica aberta em outubro e vence no começo de novembro.
 - O formulário mostra em qual fatura a compra vai cair antes de salvar.
+- Ao mudar o fechamento, o vencimento ou o mês de contagem de um cartão, as marcações de "pago" acompanham as compras.
 - Cartões podem ser marcados como "fora de uso": o histórico fica e eles somem do formulário.
 
 ### Ajustes
@@ -58,6 +60,7 @@ O layout é pensado primeiro para o celular: no celular, as abas ficam numa barr
 ├── manifest.webmanifest  # Dados para instalar como app no celular (PWA)
 ├── icons/            # Logo em SVG e ícones PNG (192, 512, maskable, Apple, favicon)
 └── supabase/
+    ├── cards_invoice_offset.sql  # Coluna do mês em que as compras de cada cartão contam
     ├── category_limits.sql   # Tabela de limites por categoria
     └── user_settings.sql     # Tabela da meta de economia
 ```
@@ -104,7 +107,7 @@ Todas as tabelas têm a coluna `user_id` e usam Row Level Security: cada login s
 
 **`entries`**: `id`, `user_id`, `description`, `amount`, `type` (`income`, `bill`, `expense` ou `credit`), `category`, `due_date`, `start_month` (`AAAA-MM`), `repeat` (`once`, `fixed` ou `installment`), `installments`, `card_name`, `paid_months` (array de texto) e `created_at`.
 
-**`cards`**: `id`, `user_id`, `name`, `closing_day`, `due_day`, `color`, `active` e `created_at`.
+**`cards`**: `id`, `user_id`, `name`, `closing_day`, `due_day`, `color`, `active`, `invoice_offset` (`0` = conta no mês do vencimento, `1` = no mês anterior, criada por [`supabase/cards_invoice_offset.sql`](supabase/cards_invoice_offset.sql)) e `created_at`.
 
 ### Como os pagamentos são guardados
 

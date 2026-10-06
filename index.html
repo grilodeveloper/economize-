@@ -388,6 +388,14 @@
             <input id="cardDueInput" name="dueDay" type="number" inputmode="numeric" min="1" max="31" required />
           </label>
         </div>
+        <div class="field">
+          <span class="field-label">As compras contam no mês</span>
+          <div class="segmented" role="radiogroup" aria-label="Mês em que as compras contam">
+            <label><input type="radio" name="invoiceOffset" value="0" /><span>Do vencimento</span></label>
+            <label><input type="radio" name="invoiceOffset" value="1" /><span>Antes do vencimento</span></label>
+          </div>
+          <small id="invoiceOffsetHint" class="field-help"></small>
+        </div>
         <label class="switch">
           <input id="cardActiveInput" name="active" type="checkbox" />
           <span>Em uso</span>
